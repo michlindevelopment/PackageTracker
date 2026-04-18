@@ -33,11 +33,16 @@ data class PackageGroup(
                 else packages.first().name.ifBlank { trackingNumber.ifBlank { "Package" } }
 }
 
+// "Order date" = earliest tracking event time for the package (when the order
+// was first recorded by the carrier). Falls back to createdAt when no events.
+private fun TrackedPackage.orderDate(): Long =
+    events.minOfOrNull { it.time } ?: createdAt
+
 private fun List<TrackedPackage>.toGroups(): List<PackageGroup> =
     groupBy { it.trackingNumber.ifBlank { it.id.toString() } }
         .entries
         .map { (tn, pkgs) ->
-            val sorted = pkgs.sortedByDescending { it.createdAt }
+            val sorted = pkgs.sortedByDescending { it.orderDate() }
             PackageGroup(
                 trackingNumber = tn,
                 packages = sorted,
@@ -46,7 +51,7 @@ private fun List<TrackedPackage>.toGroups(): List<PackageGroup> =
                 lastUpdated = sorted.maxOf { it.lastUpdated }
             )
         }
-        .sortedByDescending { it.lastUpdated }
+        .sortedByDescending { group -> group.packages.maxOf { it.orderDate() } }
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
