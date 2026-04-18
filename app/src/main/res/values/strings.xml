@@ -2,10 +2,14 @@
     <string name="app_name">Package Tracker</string>
     <string name="tab_in_transit">In Transit</string>
     <string name="tab_received">Received</string>
+    <string name="tab_not_yet_sent">Not Yet Sent</string>
     <string name="add_package">Add Package</string>
     <string name="edit_package">Edit Package</string>
     <string name="tracking_number">Tracking Number</string>
+    <string name="tracking_number_optional">Tracking Number (optional)</string>
+    <string name="tracking_number_hint">Leave blank to save as "Not Yet Sent"</string>
     <string name="package_name">Package Name (optional)</string>
+    <string name="package_name_label">Package Name</string>
     <string name="track_button">Track</string>
     <string name="save_button">Save</string>
     <string name="cancel">Cancel</string>
@@ -18,6 +22,8 @@
     <string name="empty_in_transit_sub">Add a tracking number to start tracking</string>
     <string name="empty_received">No received packages</string>
     <string name="empty_received_sub">Packages you\'ve received will appear here</string>
+    <string name="empty_not_yet_sent">Nothing ordered yet</string>
+    <string name="empty_not_yet_sent_sub">Add items you\'ve ordered but haven\'t shipped yet</string>
     <string name="refresh">Refresh</string>
     <string name="retry">Retry</string>
     <string name="undo">Undo</string>

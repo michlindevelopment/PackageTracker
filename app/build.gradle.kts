@@ -103,6 +103,10 @@ dependencies {
     // Accompanist
     implementation(libs.accompanist.permissions)
 
+    // Image Cropper (CanHub fork of Edmodo cropper)
+    implementation(libs.image.cropper)
+
+
     // Test
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

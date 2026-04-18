@@ -8,11 +8,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowCircleDown
+import androidx.compose.material.icons.filled.ArrowCircleUp
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material.icons.filled.GppBad
 import androidx.compose.material.icons.filled.Help
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material3.Icon
@@ -26,10 +30,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.michlind.packagetracker.domain.model.PackageStatus
+import com.michlind.packagetracker.ui.theme.StatusAwaitingPickup
 import com.michlind.packagetracker.ui.theme.StatusCustoms
+import com.michlind.packagetracker.ui.theme.StatusCustomsExport
+import com.michlind.packagetracker.ui.theme.StatusCustomsImport
 import com.michlind.packagetracker.ui.theme.StatusDelivered
 import com.michlind.packagetracker.ui.theme.StatusException
 import com.michlind.packagetracker.ui.theme.StatusInTransit
+import com.michlind.packagetracker.ui.theme.StatusNotYetSent
 import com.michlind.packagetracker.ui.theme.StatusOrderPlaced
 import com.michlind.packagetracker.ui.theme.StatusOutForDelivery
 import com.michlind.packagetracker.ui.theme.StatusShipped
@@ -48,25 +56,29 @@ fun StatusBadge(status: PackageStatus, modifier: Modifier = Modifier) {
             imageVector = icon,
             contentDescription = null,
             tint = color,
-            modifier = Modifier.size(14.dp)
+            modifier = Modifier.size(13.dp)
         )
         Spacer(Modifier.width(4.dp))
         Text(
             text = status.displayName,
             color = color,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             style = MaterialTheme.typography.labelMedium
         )
     }
 }
 
 fun PackageStatus.colorAndIcon(): Pair<Color, ImageVector> = when (this) {
-    PackageStatus.ORDER_PLACED -> StatusOrderPlaced to Icons.Default.ShoppingBag
-    PackageStatus.SHIPPED -> StatusShipped to Icons.Default.FlightTakeoff
-    PackageStatus.IN_TRANSIT -> StatusInTransit to Icons.Default.LocalShipping
-    PackageStatus.CUSTOMS -> StatusCustoms to Icons.Default.GppBad
+    PackageStatus.NOT_YET_SENT     -> StatusNotYetSent     to Icons.Default.HourglassEmpty
+    PackageStatus.ORDER_PLACED     -> StatusOrderPlaced    to Icons.Default.ShoppingBag
+    PackageStatus.SHIPPED          -> StatusShipped        to Icons.Default.FlightTakeoff
+    PackageStatus.IN_TRANSIT       -> StatusInTransit      to Icons.Default.LocalShipping
+    PackageStatus.CUSTOMS_EXPORT   -> StatusCustomsExport  to Icons.Default.ArrowCircleUp
+    PackageStatus.CUSTOMS_IMPORT   -> StatusCustomsImport  to Icons.Default.ArrowCircleDown
+    PackageStatus.CUSTOMS          -> StatusCustoms        to Icons.Default.GppBad
     PackageStatus.OUT_FOR_DELIVERY -> StatusOutForDelivery to Icons.Default.LocalShipping
-    PackageStatus.DELIVERED -> StatusDelivered to Icons.Default.CheckCircle
-    PackageStatus.EXCEPTION -> StatusException to Icons.Default.Error
-    PackageStatus.UNKNOWN -> StatusUnknown to Icons.Default.Help
+    PackageStatus.AWAITING_PICKUP  -> StatusAwaitingPickup to Icons.Default.Inbox
+    PackageStatus.DELIVERED        -> StatusDelivered      to Icons.Default.CheckCircle
+    PackageStatus.EXCEPTION        -> StatusException      to Icons.Default.Error
+    PackageStatus.UNKNOWN          -> StatusUnknown        to Icons.Default.Help
 }

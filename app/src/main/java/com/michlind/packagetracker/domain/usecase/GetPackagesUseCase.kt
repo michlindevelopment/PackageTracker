@@ -16,3 +16,9 @@ class GetReceivedPackagesUseCase @Inject constructor(
 ) {
     operator fun invoke(): Flow<List<TrackedPackage>> = repository.getReceivedPackages()
 }
+
+class GetNotYetSentPackagesUseCase @Inject constructor(
+    private val repository: PackageRepository
+) {
+    operator fun invoke(): Flow<List<TrackedPackage>> = repository.getNotYetSentPackages()
+}

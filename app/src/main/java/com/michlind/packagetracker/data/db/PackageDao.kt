@@ -11,16 +11,19 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface PackageDao {
 
-    @Query("SELECT * FROM packages WHERE isReceived = 0 ORDER BY lastUpdated DESC")
+    @Query("SELECT * FROM packages WHERE isReceived = 0 AND status != 'NOT_YET_SENT' ORDER BY lastUpdated DESC")
     fun getActivePackages(): Flow<List<PackageEntity>>
 
     @Query("SELECT * FROM packages WHERE isReceived = 1 ORDER BY lastUpdated DESC")
     fun getReceivedPackages(): Flow<List<PackageEntity>>
 
+    @Query("SELECT * FROM packages WHERE status = 'NOT_YET_SENT' ORDER BY createdAt DESC")
+    fun getNotYetSentPackages(): Flow<List<PackageEntity>>
+
     @Query("SELECT * FROM packages WHERE id = :id")
     suspend fun getById(id: Long): PackageEntity?
 
-    @Query("SELECT * FROM packages WHERE isReceived = 0")
+    @Query("SELECT * FROM packages WHERE isReceived = 0 AND status != 'NOT_YET_SENT'")
     suspend fun getNonReceivedPackages(): List<PackageEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

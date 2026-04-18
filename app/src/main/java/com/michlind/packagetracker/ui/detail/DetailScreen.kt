@@ -71,7 +71,7 @@ import com.michlind.packagetracker.ui.components.colorAndIcon
 import com.michlind.packagetracker.util.DateUtils
 
 private val STAGE_LABELS = listOf(
-    "Order\nPlaced", "Shipped", "In Transit", "Customs", "Out for\nDelivery", "Delivered"
+    "Order\nPlaced", "Shipped", "Export\nCustoms", "In Transit", "Import\nCustoms", "Delivery", "Delivered"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -199,33 +199,6 @@ private fun DetailContent(
             .padding(paddingValues),
         contentPadding = PaddingValues(bottom = 32.dp)
     ) {
-        // Hero image
-        item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(220.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                if (pkg.photoUri != null) {
-                    AsyncImage(
-                        model = pkg.photoUri,
-                        contentDescription = "Package photo",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Inventory2,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(72.dp)
-                    )
-                }
-            }
-        }
-
         // Refresh indicator
         item {
             if (isRefreshing) {
@@ -236,39 +209,64 @@ private fun DetailContent(
             }
         }
 
-        // Status header
+        // Status header with small square thumbnail
         item {
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-                val (color, icon) = pkg.status.colorAndIcon()
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = pkg.status.displayName,
-                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                        color = color
-                    )
-                }
-                if (pkg.statusDescription.isNotBlank()) {
-                    Text(
-                        text = pkg.statusDescription,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                Row(
-                    modifier = Modifier.padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
                 ) {
-                    pkg.originCountry?.let {
-                        InfoChip(label = "From", value = it)
+                    if (pkg.photoUri != null) {
+                        AsyncImage(
+                            model = pkg.photoUri,
+                            contentDescription = "Package photo",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Inventory2,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(36.dp)
+                        )
                     }
-                    pkg.destCountry?.let {
-                        InfoChip(label = "To", value = it)
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    val (color, icon) = pkg.status.colorAndIcon()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = pkg.status.displayName,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = color
+                        )
                     }
-                    pkg.daysInTransit?.let {
-                        InfoChip(label = "Transit", value = it)
+                    if (pkg.statusDescription.isNotBlank()) {
+                        Text(
+                            text = pkg.statusDescription,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        pkg.originCountry?.let { InfoChip(label = "From", value = it) }
+                        pkg.destCountry?.let { InfoChip(label = "To", value = it) }
+                        pkg.daysInTransit?.let { InfoChip(label = "Transit", value = it) }
                     }
                 }
             }
@@ -400,8 +398,10 @@ private fun DetailContent(
 
 @Composable
 private fun ProgressStepper(currentStatus: PackageStatus, modifier: Modifier = Modifier) {
-    val currentStep = currentStatus.stepIndex.coerceAtLeast(0)
     val isException = currentStatus == PackageStatus.EXCEPTION
+        || currentStatus == PackageStatus.UNKNOWN
+        || currentStatus == PackageStatus.NOT_YET_SENT
+    val currentStep = if (isException) 0 else currentStatus.stepIndex.coerceAtLeast(0)
 
     Card(
         modifier = modifier.fillMaxWidth(),

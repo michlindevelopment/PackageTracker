@@ -8,6 +8,9 @@ import android.os.Build
 import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.canhub.cropper.CropImageContract
+import com.canhub.cropper.CropImageContractOptions
+import com.canhub.cropper.CropImageOptions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,6 +41,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -99,17 +103,12 @@ fun AddEditScreen(
     var showPhotoDialog by remember { mutableStateOf(false) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
 
-    // Load for edit mode
     LaunchedEffect(packageId) {
         if (packageId != null) viewModel.loadForEdit(packageId)
     }
-
-    // Navigate after save
     LaunchedEffect(savedPackageId) {
         savedPackageId?.let { onSaved(it) }
     }
-
-    // Show errors
     LaunchedEffect(errorMessage) {
         if (errorMessage != null) {
             snackbarHostState.showSnackbar(errorMessage!!)
@@ -117,29 +116,45 @@ fun AddEditScreen(
         }
     }
 
-    // Gallery launcher
-    val galleryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let {
-            // Persist the permission
-            context.contentResolver.takePersistableUriPermission(
-                it, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+    // Image cropper result launcher
+    val cropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
+        if (result.isSuccessful) {
+            result.uriContent?.let { viewModel.updatePhotoUri(it.toString()) }
+        }
+    }
+
+    fun launchCrop(source: Uri) {
+        cropLauncher.launch(
+            CropImageContractOptions(
+                uri = source,
+                cropImageOptions = CropImageOptions(
+                    fixAspectRatio = true,
+                    aspectRatioX = 1,
+                    aspectRatioY = 1,
+                    outputRequestWidth = 1024,
+                    outputRequestHeight = 1024
+                )
             )
-            viewModel.updatePhotoUri(it.toString())
+        )
+    }
+
+    // Gallery launcher — opens cropper after pick
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) { }
+            launchCrop(uri)
         }
     }
 
-    // Camera launcher
-    val cameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success) {
-            cameraUri?.let { viewModel.updatePhotoUri(it.toString()) }
-        }
+    // Camera launcher — opens cropper after capture
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) cameraUri?.let { launchCrop(it) }
     }
 
-    // Permissions
     val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA)
     val storagePermission = rememberPermissionState(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
@@ -156,10 +171,7 @@ fun AddEditScreen(
             title = { Text("Camera Permission") },
             text = { Text(stringResource(R.string.camera_permission_rationale)) },
             confirmButton = {
-                TextButton(onClick = {
-                    showCameraRationale = false
-                    cameraPermission.launchPermissionRequest()
-                }) { Text("Allow") }
+                TextButton(onClick = { showCameraRationale = false; cameraPermission.launchPermissionRequest() }) { Text("Allow") }
             },
             dismissButton = {
                 TextButton(onClick = { showCameraRationale = false }) { Text(stringResource(R.string.cancel)) }
@@ -173,10 +185,7 @@ fun AddEditScreen(
             title = { Text("Storage Permission") },
             text = { Text(stringResource(R.string.storage_permission_rationale)) },
             confirmButton = {
-                TextButton(onClick = {
-                    showStorageRationale = false
-                    storagePermission.launchPermissionRequest()
-                }) { Text("Allow") }
+                TextButton(onClick = { showStorageRationale = false; storagePermission.launchPermissionRequest() }) { Text("Allow") }
             },
             dismissButton = {
                 TextButton(onClick = { showStorageRationale = false }) { Text(stringResource(R.string.cancel)) }
@@ -184,13 +193,16 @@ fun AddEditScreen(
         )
     }
 
+    // Photo source dialog — Bug 4 fix: left-aligned rows instead of centered TextButtons
     if (showPhotoDialog) {
         AlertDialog(
             onDismissRequest = { showPhotoDialog = false },
             title = { Text(stringResource(R.string.add_photo)) },
             text = {
                 Column {
-                    TextButton(
+                    PhotoOptionRow(
+                        icon = { Icon(Icons.Default.CameraAlt, contentDescription = null) },
+                        label = stringResource(R.string.take_photo),
                         onClick = {
                             showPhotoDialog = false
                             when {
@@ -202,14 +214,12 @@ fun AddEditScreen(
                                 cameraPermission.status.shouldShowRationale -> showCameraRationale = true
                                 else -> cameraPermission.launchPermissionRequest()
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.CameraAlt, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.take_photo))
-                    }
-                    TextButton(
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    PhotoOptionRow(
+                        icon = { Icon(Icons.Default.Image, contentDescription = null) },
+                        label = stringResource(R.string.choose_from_gallery),
                         onClick = {
                             showPhotoDialog = false
                             when {
@@ -217,13 +227,8 @@ fun AddEditScreen(
                                 storagePermission.status.shouldShowRationale -> showStorageRationale = true
                                 else -> storagePermission.launchPermissionRequest()
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Image, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.choose_from_gallery))
-                    }
+                        }
+                    )
                 }
             },
             confirmButton = {},
@@ -268,11 +273,7 @@ fun AddEditScreen(
                     .height(180.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                        RoundedCornerShape(16.dp)
-                    )
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
                     .clickable { showPhotoDialog = true },
                 contentAlignment = Alignment.Center
             ) {
@@ -283,7 +284,6 @@ fun AddEditScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
-                    // Change photo overlay
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -291,47 +291,40 @@ fun AddEditScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.AddAPhoto,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(32.dp)
-                            )
-                            Text(
-                                stringResource(R.string.change_photo),
-                                style = MaterialTheme.typography.labelMedium
-                            )
+                            Icon(Icons.Default.AddAPhoto, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(32.dp))
+                            Text(stringResource(R.string.change_photo), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.AddAPhoto,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(40.dp)
-                        )
+                        Icon(Icons.Default.AddAPhoto, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(40.dp))
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            stringResource(R.string.add_photo),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Text(stringResource(R.string.add_photo), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
+
+            // Name field (shown first — required when no tracking number)
+            OutlinedTextField(
+                value = name,
+                onValueChange = { viewModel.updateName(it) },
+                label = { Text(stringResource(R.string.package_name_label)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
 
             // Tracking number field
             OutlinedTextField(
                 value = trackingNumber,
                 onValueChange = { viewModel.updateTrackingNumber(it) },
-                label = { Text(stringResource(R.string.tracking_number)) },
+                label = { Text(stringResource(R.string.tracking_number_optional)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                supportingText = { Text(stringResource(R.string.tracking_number_hint)) },
                 trailingIcon = {
                     if (isTracking) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else {
+                    } else if (trackingNumber.isNotBlank()) {
                         IconButton(onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             viewModel.track()
@@ -342,37 +335,22 @@ fun AddEditScreen(
                 }
             )
 
-            // Name field
-            OutlinedTextField(
-                value = name,
-                onValueChange = { viewModel.updateName(it) },
-                label = { Text(stringResource(R.string.package_name)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            // Tracking result preview
             if (trackingResult != null) {
                 TrackingResultPreview(result = trackingResult!!)
             }
 
             Spacer(Modifier.height(8.dp))
 
-            // Save button
             Button(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     viewModel.save()
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isSaving && !isTracking && trackingNumber.isNotBlank()
+                enabled = !isSaving && !isTracking && (trackingNumber.isNotBlank() || name.isNotBlank())
             ) {
                 if (isSaving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                 } else {
                     Icon(Icons.Default.CheckCircle, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -384,62 +362,52 @@ fun AddEditScreen(
 }
 
 @Composable
+private fun PhotoOptionRow(
+    icon: @Composable () -> Unit,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Start
+    ) {
+        icon()
+        Spacer(Modifier.width(16.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
 private fun TrackingResultPreview(result: TrackingResult) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Tracking Result",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-            )
+            Text("Tracking Result", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f))
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusBadge(status = result.status)
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    text = result.statusDescription,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
+                Text(result.statusDescription, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSecondaryContainer)
             }
             result.events.firstOrNull()?.let { event ->
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    text = event.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                )
-                Text(
-                    text = DateUtils.formatDateTime(event.time),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
-                )
+                Text(event.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f))
+                Text(DateUtils.formatDateTime(event.time), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f))
             }
             result.estimatedDeliveryTime?.let { eta ->
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "ETA: ${DateUtils.formatDate(eta)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
+                Text("ETA: ${DateUtils.formatDate(eta)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSecondaryContainer)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                result.originCountry?.let {
-                    Text("From: $it", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f))
-                }
-                result.destCountry?.let {
-                    Text("To: $it", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f))
-                }
+                result.originCountry?.let { Text("From: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)) }
+                result.destCountry?.let { Text("To: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)) }
             }
         }
     }
@@ -450,8 +418,6 @@ private fun createCameraUri(context: Context): Uri {
         put(MediaStore.Images.Media.DISPLAY_NAME, "pkg_photo_${System.currentTimeMillis()}.jpg")
         put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
     }
-    return context.contentResolver.insert(
-        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-        values
-    ) ?: throw IllegalStateException("Failed to create camera URI")
+    return context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+        ?: throw IllegalStateException("Failed to create camera URI")
 }

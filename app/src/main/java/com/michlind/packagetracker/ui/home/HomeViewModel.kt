@@ -2,10 +2,12 @@ package com.michlind.packagetracker.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.domain.usecase.AddPackageUseCase
 import com.michlind.packagetracker.domain.usecase.DeletePackageUseCase
 import com.michlind.packagetracker.domain.usecase.GetActivePackagesUseCase
+import com.michlind.packagetracker.domain.usecase.GetNotYetSentPackagesUseCase
 import com.michlind.packagetracker.domain.usecase.GetReceivedPackagesUseCase
 import com.michlind.packagetracker.domain.usecase.MarkAsReceivedUseCase
 import com.michlind.packagetracker.domain.usecase.RefreshPackageUseCase
@@ -14,24 +16,58 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class PackageGroup(
+    val trackingNumber: String,
+    val packages: List<TrackedPackage>,
+    val status: PackageStatus,
+    val lastUpdated: Long
+) {
+    val isMultiple: Boolean get() = packages.size > 1
+    val displayName: String
+        get() = if (isMultiple) "Multi-package (${packages.size} items)"
+                else packages.first().name.ifBlank { trackingNumber.ifBlank { "Package" } }
+}
+
+private fun List<TrackedPackage>.toGroups(): List<PackageGroup> =
+    groupBy { it.trackingNumber.ifBlank { it.id.toString() } }
+        .entries
+        .map { (tn, pkgs) ->
+            val sorted = pkgs.sortedByDescending { it.createdAt }
+            PackageGroup(
+                trackingNumber = tn,
+                packages = sorted,
+                status = sorted.maxByOrNull { it.status.stepIndex.coerceAtLeast(0) }?.status
+                    ?: PackageStatus.UNKNOWN,
+                lastUpdated = sorted.maxOf { it.lastUpdated }
+            )
+        }
+        .sortedByDescending { it.lastUpdated }
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     getActivePackages: GetActivePackagesUseCase,
     getReceivedPackages: GetReceivedPackagesUseCase,
+    getNotYetSentPackages: GetNotYetSentPackagesUseCase,
     private val deletePackage: DeletePackageUseCase,
     private val addPackage: AddPackageUseCase,
     private val markAsReceived: MarkAsReceivedUseCase,
     private val refreshPackage: RefreshPackageUseCase
 ) : ViewModel() {
 
-    val activePackages: StateFlow<List<TrackedPackage>> = getActivePackages()
+    val activeGroups: StateFlow<List<PackageGroup>> = getActivePackages()
+        .map { it.toGroups() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val receivedPackages: StateFlow<List<TrackedPackage>> = getReceivedPackages()
+    val receivedGroups: StateFlow<List<PackageGroup>> = getReceivedPackages()
+        .map { it.toGroups() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val notYetSentPackages: StateFlow<List<TrackedPackage>> = getNotYetSentPackages()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isRefreshing = MutableStateFlow(false)
@@ -40,37 +76,40 @@ class HomeViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    private var lastDeletedPackage: TrackedPackage? = null
+    private var lastDeletedPackages: List<TrackedPackage>? = null
 
-    fun delete(pkg: TrackedPackage) {
-        lastDeletedPackage = pkg
+    fun deleteGroup(group: PackageGroup) {
+        lastDeletedPackages = group.packages
         viewModelScope.launch {
-            deletePackage(pkg.id)
+            group.packages.forEach { deletePackage(it.id) }
         }
     }
 
+    fun delete(pkg: TrackedPackage) {
+        lastDeletedPackages = listOf(pkg)
+        viewModelScope.launch { deletePackage(pkg.id) }
+    }
+
     fun undoDelete() {
-        val pkg = lastDeletedPackage ?: return
+        val pkgs = lastDeletedPackages ?: return
         viewModelScope.launch {
-            addPackage(pkg)
-            lastDeletedPackage = null
+            pkgs.forEach { addPackage(it) }
+            lastDeletedPackages = null
         }
     }
 
     fun toggleReceived(id: Long, isReceived: Boolean) {
-        viewModelScope.launch {
-            markAsReceived(id, isReceived)
-        }
+        viewModelScope.launch { markAsReceived(id, isReceived) }
     }
 
     fun refreshAll() {
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
-                activePackages.value.forEach { pkg ->
+                activeGroups.value.flatMap { it.packages }.forEach { pkg ->
                     refreshPackage(pkg.id)
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 _errorMessage.value = "Failed to refresh packages"
             } finally {
                 _isRefreshing.value = false

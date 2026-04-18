@@ -1,20 +1,26 @@
 package com.michlind.packagetracker.ui.navigation
 
+import android.net.Uri
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.michlind.packagetracker.ui.add.AddEditScreen
+import com.michlind.packagetracker.ui.attach.AttachImageSheet
 import com.michlind.packagetracker.ui.detail.DetailScreen
 import com.michlind.packagetracker.ui.home.HomeScreen
 
 @Composable
-fun AppNavigation(startPackageId: Long? = null) {
+fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
     val navController = rememberNavController()
 
     // Navigate to detail if opened from notification
@@ -92,10 +98,24 @@ fun AppNavigation(startPackageId: Long? = null) {
                 packageId = packageId,
                 onBack = { navController.popBackStack() },
                 onSaved = { id ->
-                    navController.popBackStack()
-                    navController.navigate(Screen.Detail.createRoute(id))
+                    if (packageId != null) {
+                        // Edit mode — Detail is already in the back stack; just pop AddEdit
+                        navController.popBackStack()
+                    } else {
+                        // Add mode — pop AddEdit then navigate to the new Detail
+                        navController.popBackStack()
+                        navController.navigate(Screen.Detail.createRoute(id))
+                    }
                 }
             )
         }
+    }
+
+    var pendingSharedUri by remember { mutableStateOf(sharedImageUri) }
+    pendingSharedUri?.let { uri ->
+        AttachImageSheet(
+            sharedImageUri = uri,
+            onDismiss = { pendingSharedUri = null }
+        )
     }
 }

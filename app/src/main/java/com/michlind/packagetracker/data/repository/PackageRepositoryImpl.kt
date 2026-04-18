@@ -29,6 +29,9 @@ class PackageRepositoryImpl @Inject constructor(
     override fun getReceivedPackages(): Flow<List<TrackedPackage>> =
         dao.getReceivedPackages().map { list -> list.map { it.toDomain() } }
 
+    override fun getNotYetSentPackages(): Flow<List<TrackedPackage>> =
+        dao.getNotYetSentPackages().map { list -> list.map { it.toDomain() } }
+
     override suspend fun getPackageById(id: Long): TrackedPackage? =
         dao.getById(id)?.toDomain()
 

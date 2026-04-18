@@ -49,6 +49,7 @@ class AddEditViewModel @Inject constructor(
     val savedPackageId: StateFlow<Long?> = _savedPackageId.asStateFlow()
 
     private var editingPackageId: Long? = null
+    private var existingPackage: TrackedPackage? = null
 
     val isEditMode: Boolean get() = editingPackageId != null
 
@@ -56,6 +57,7 @@ class AddEditViewModel @Inject constructor(
         viewModelScope.launch {
             val pkg = repository.getPackageById(packageId) ?: return@launch
             editingPackageId = packageId
+            existingPackage = pkg
             _name.value = pkg.name
             _trackingNumber.value = pkg.trackingNumber
             _photoUri.value = pkg.photoUri
@@ -76,56 +78,65 @@ class AddEditViewModel @Inject constructor(
             _isTracking.value = true
             _trackingResult.value = null
             _errorMessage.value = null
-            val result = trackPackageUseCase(tn)
-            result.onSuccess { tracking ->
-                _trackingResult.value = tracking
-            }.onFailure { e ->
-                _errorMessage.value = e.message ?: "Failed to track package"
-            }
+            trackPackageUseCase(tn)
+                .onSuccess { _trackingResult.value = it }
+                .onFailure { _errorMessage.value = it.message ?: "Failed to track package" }
             _isTracking.value = false
         }
     }
 
     fun save() {
         val tn = _trackingNumber.value.trim()
-        if (tn.isBlank()) {
-            _errorMessage.value = "Tracking number is required"
+        val nameVal = _name.value.trim()
+        if (tn.isBlank() && nameVal.isBlank()) {
+            _errorMessage.value = "Please enter a package name or tracking number"
             return
         }
         viewModelScope.launch {
             _isSaving.value = true
             val result = _trackingResult.value
             val now = System.currentTimeMillis()
+            val existing = existingPackage
+            val wasNotYetSent = existing?.status == PackageStatus.NOT_YET_SENT
+            val hasTrackingNumber = tn.isNotBlank()
+
+            // Determine status: prefer fresh tracking result, then preserve existing, fall back
+            val resolvedStatus = result?.status
+                ?: existing?.status?.takeUnless { it == PackageStatus.NOT_YET_SENT && hasTrackingNumber }
+                ?: if (hasTrackingNumber) PackageStatus.UNKNOWN else PackageStatus.NOT_YET_SENT
+
             val pkg = TrackedPackage(
                 id = editingPackageId ?: 0L,
                 trackingNumber = tn,
-                name = _name.value.trim().ifBlank { tn },
+                name = nameVal.ifBlank { tn.ifBlank { "Package" } },
                 photoUri = _photoUri.value,
-                status = result?.status ?: PackageStatus.UNKNOWN,
-                statusDescription = result?.statusDescription.orEmpty(),
-                lastEvent = result?.events?.firstOrNull(),
-                events = result?.events ?: emptyList(),
+                status = resolvedStatus,
+                statusDescription = result?.statusDescription ?: existing?.statusDescription.orEmpty(),
+                lastEvent = result?.events?.firstOrNull() ?: existing?.lastEvent,
+                events = result?.events ?: existing?.events ?: emptyList(),
                 lastUpdated = now,
-                isReceived = false,
-                createdAt = now,
-                estimatedDeliveryTime = result?.estimatedDeliveryTime,
-                daysInTransit = result?.daysInTransit,
-                originCountry = result?.originCountry,
-                destCountry = result?.destCountry
+                isReceived = existing?.isReceived ?: false,
+                createdAt = existing?.createdAt ?: now,
+                estimatedDeliveryTime = result?.estimatedDeliveryTime ?: existing?.estimatedDeliveryTime,
+                daysInTransit = result?.daysInTransit ?: existing?.daysInTransit,
+                originCountry = result?.originCountry ?: existing?.originCountry,
+                destCountry = result?.destCountry ?: existing?.destCountry
             )
-            if (editingPackageId != null) {
-                // Preserve createdAt and isReceived from existing
-                val existing = repository.getPackageById(editingPackageId!!)
-                val updated = pkg.copy(
-                    createdAt = existing?.createdAt ?: now,
-                    isReceived = existing?.isReceived ?: false
-                )
-                updatePackage(updated)
-                _savedPackageId.value = editingPackageId
+
+            val savedId = if (editingPackageId != null) {
+                updatePackage(pkg)
+                editingPackageId!!
             } else {
-                val id = addPackage(pkg)
-                _savedPackageId.value = id
+                addPackage(pkg)
             }
+
+            // Auto-fetch tracking data after save whenever a tracking number is present
+            // and no fresh result was already attached via the manual "Track" button.
+            if (hasTrackingNumber && result == null) {
+                repository.refreshPackage(savedId)
+            }
+
+            _savedPackageId.value = savedId
             _isSaving.value = false
         }
     }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 interface PackageRepository {
     fun getActivePackages(): Flow<List<TrackedPackage>>
     fun getReceivedPackages(): Flow<List<TrackedPackage>>
+    fun getNotYetSentPackages(): Flow<List<TrackedPackage>>
     suspend fun getPackageById(id: Long): TrackedPackage?
     suspend fun getNonReceivedPackages(): List<TrackedPackage>
     suspend fun addPackage(pkg: TrackedPackage): Long
