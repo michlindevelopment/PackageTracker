@@ -9,4 +9,5 @@ sealed class Screen(val route: String) {
         fun createRoute(packageId: Long? = null) =
             if (packageId != null) "add_edit?packageId=$packageId" else "add_edit"
     }
+    data object Settings : Screen("settings")
 }

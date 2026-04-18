@@ -18,6 +18,7 @@ import com.michlind.packagetracker.ui.add.AddEditScreen
 import com.michlind.packagetracker.ui.attach.AttachImageSheet
 import com.michlind.packagetracker.ui.detail.DetailScreen
 import com.michlind.packagetracker.ui.home.HomeScreen
+import com.michlind.packagetracker.ui.settings.SettingsScreen
 
 @Composable
 fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
@@ -65,8 +66,15 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 },
                 onAddClick = {
                     navController.navigate(Screen.AddEdit.createRoute())
+                },
+                onSettingsClick = {
+                    navController.navigate(Screen.Settings.route)
                 }
             )
+        }
+
+        composable(Screen.Settings.route) {
+            SettingsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(

@@ -22,13 +22,16 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -41,8 +44,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,7 +59,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
@@ -78,6 +79,7 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     onPackageClick: (Long) -> Unit,
     onAddClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val activeGroups by viewModel.activeGroups.collectAsStateWithLifecycle()
@@ -92,7 +94,6 @@ fun HomeScreen(
     // Default to "In Transit" (tab 1) on cold start; rememberSaveable preserves
     // the user's choice when navigating to Detail and back.
     var selectedTab by rememberSaveable { mutableIntStateOf(1) }
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     // Confirmation dialog state
     var pendingDeleteGroup by remember { mutableStateOf<PackageGroup?>(null) }
@@ -143,11 +144,27 @@ fun HomeScreen(
     }
 
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
-                scrollBehavior = scrollBehavior
+                actions = {
+                    IconButton(
+                        onClick = { if (!isRefreshing) viewModel.refreshAll() },
+                        enabled = !isRefreshing
+                    ) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
+                        }
+                    }
+                    IconButton(onClick = onSettingsClick) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -167,34 +184,28 @@ fun HomeScreen(
                 Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text(stringResource(R.string.tab_received)) })
             }
 
-            PullToRefreshBox(
-                isRefreshing = isRefreshing && selectedTab != 0,
-                onRefresh = { viewModel.refreshAll() },
-                modifier = Modifier.fillMaxSize()
-            ) {
-                when (selectedTab) {
-                    0 -> NotYetSentList(
-                        packages = notYetSent,
-                        onPackageClick = onPackageClick,
-                        onDeleteRequested = { pendingDeletePkg = it }
-                    )
-                    1 -> GroupList(
-                        groups = activeGroups,
-                        emptyIcon = R.drawable.ic_empty_transit,
-                        emptyTitle = stringResource(R.string.empty_in_transit),
-                        emptySubtitle = stringResource(R.string.empty_in_transit_sub),
-                        onPackageClick = onPackageClick,
-                        onDeleteRequested = { pendingDeleteGroup = it }
-                    )
-                    2 -> GroupList(
-                        groups = receivedGroups,
-                        emptyIcon = R.drawable.ic_empty_received,
-                        emptyTitle = stringResource(R.string.empty_received),
-                        emptySubtitle = stringResource(R.string.empty_received_sub),
-                        onPackageClick = onPackageClick,
-                        onDeleteRequested = { pendingDeleteGroup = it }
-                    )
-                }
+            when (selectedTab) {
+                0 -> NotYetSentList(
+                    packages = notYetSent,
+                    onPackageClick = onPackageClick,
+                    onDeleteRequested = { pendingDeletePkg = it }
+                )
+                1 -> GroupList(
+                    groups = activeGroups,
+                    emptyIcon = R.drawable.ic_empty_transit,
+                    emptyTitle = stringResource(R.string.empty_in_transit),
+                    emptySubtitle = stringResource(R.string.empty_in_transit_sub),
+                    onPackageClick = onPackageClick,
+                    onDeleteRequested = { pendingDeleteGroup = it }
+                )
+                2 -> GroupList(
+                    groups = receivedGroups,
+                    emptyIcon = R.drawable.ic_empty_received,
+                    emptyTitle = stringResource(R.string.empty_received),
+                    emptySubtitle = stringResource(R.string.empty_received_sub),
+                    onPackageClick = onPackageClick,
+                    onDeleteRequested = { pendingDeleteGroup = it }
+                )
             }
         }
     }
