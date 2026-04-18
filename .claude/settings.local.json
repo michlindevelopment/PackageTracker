@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/domain/model/TrackingEvent.kt)",
+      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/domain/model/TrackedPackage.kt)",
+      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/domain/model/TrackingResult.kt)",
+      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/domain/repository/PackageRepository.kt)",
+      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/ui/components/StatusBadge.kt)",
+      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/ui/components/TimelineItem.kt)",
+      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/ui/components/EmptyState.kt)",
+      "Bash(ls /c/Development/Projects/PackageTracker/*.kts /c/Development/Projects/PackageTracker/app/*.kts)"
+    ]
+  }
+}

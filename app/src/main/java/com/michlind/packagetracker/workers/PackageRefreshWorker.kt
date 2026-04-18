@@ -1,0 +1,67 @@
+package com.michlind.packagetracker.workers
+
+import android.content.Context
+import androidx.hilt.work.HiltWorker
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import com.michlind.packagetracker.domain.repository.PackageRepository
+import com.michlind.packagetracker.util.NotificationUtils
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+import java.util.concurrent.TimeUnit
+
+@HiltWorker
+class PackageRefreshWorker @AssistedInject constructor(
+    @Assisted context: Context,
+    @Assisted params: WorkerParameters,
+    private val repository: PackageRepository
+) : CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result {
+        return try {
+            val packages = repository.getNonReceivedPackages()
+            packages.forEach { pkg ->
+                val result = repository.refreshPackage(pkg.id)
+                result.onSuccess { statusChanged ->
+                    if (statusChanged) {
+                        val updated = repository.getPackageById(pkg.id)
+                        NotificationUtils.sendStatusUpdateNotification(
+                            context = applicationContext,
+                            packageId = pkg.id,
+                            packageName = pkg.name.ifBlank { pkg.trackingNumber },
+                            newStatus = updated?.status?.displayName ?: "Updated"
+                        )
+                    }
+                }
+            }
+            Result.success()
+        } catch (e: Exception) {
+            Result.retry()
+        }
+    }
+
+    companion object {
+        private const val WORK_NAME = "package_refresh_periodic"
+
+        fun schedule(context: Context) {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+
+            val request = PeriodicWorkRequestBuilder<PackageRefreshWorker>(6, TimeUnit.HOURS)
+                .setConstraints(constraints)
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                request
+            )
+        }
+    }
+}
