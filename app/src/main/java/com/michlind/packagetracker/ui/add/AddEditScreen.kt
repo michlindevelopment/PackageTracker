@@ -81,6 +81,7 @@ import com.michlind.packagetracker.ui.components.StatusBadge
 import com.michlind.packagetracker.util.DateUtils
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
+@Suppress("DEPRECATION")
 @Composable
 fun AddEditScreen(
     packageId: Long?,
@@ -132,7 +133,10 @@ fun AddEditScreen(
                     aspectRatioX = 1,
                     aspectRatioY = 1,
                     outputRequestWidth = 1024,
-                    outputRequestHeight = 1024
+                    outputRequestHeight = 1024,
+                    activityBackgroundColor = android.graphics.Color.BLACK,
+                    activityMenuIconColor = android.graphics.Color.WHITE,
+                    activityMenuTextColor = android.graphics.Color.WHITE
                 )
             )
         )

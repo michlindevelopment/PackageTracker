@@ -103,8 +103,9 @@ dependencies {
     // Accompanist
     implementation(libs.accompanist.permissions)
 
-    // Image Cropper (CanHub fork of Edmodo cropper)
+    // Image Cropper (CanHub fork of Edmodo cropper) — requires AppCompat for its activity
     implementation(libs.image.cropper)
+    implementation(libs.androidx.appcompat)
 
 
     // Test

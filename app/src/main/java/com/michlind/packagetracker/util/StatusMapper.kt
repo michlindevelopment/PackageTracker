@@ -14,7 +14,12 @@ object StatusMapper {
                     else -> PackageStatus.OUT_FOR_DELIVERY
                 }
             }
-            status.contains("CUSTOMS") -> PackageStatus.CUSTOMS
+            status.contains("CUSTOMS") -> when (latestActionCode?.uppercase()) {
+                "CC_EX_START", "CC_EX_SUCCESS", "LH_HO_AIRLINE" -> PackageStatus.CUSTOMS_EXPORT
+                "CC_IM_START", "CC_IM_SUCCESS",
+                "CC_HO_IN_SUCCESS", "CC_HO_OUT_SUCCESS" -> PackageStatus.CUSTOMS_IMPORT
+                else -> PackageStatus.CUSTOMS
+            }
             status.contains("DEPARTURE") || status == "IN_TRANSIT" -> PackageStatus.IN_TRANSIT
             status.contains("ACCEPT") || status.contains("GTMS") -> PackageStatus.SHIPPED
             status.contains("FAILED") || status.contains("RETURN") || status.contains("LOST") || status.contains("EXCEPTION") -> PackageStatus.EXCEPTION
