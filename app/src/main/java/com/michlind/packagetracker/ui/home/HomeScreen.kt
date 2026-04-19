@@ -141,7 +141,10 @@ fun HomeScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { }) {
+                TextButton(onClick = {
+                    pendingDeleteGroup = null
+                    pendingDeletePkg = null
+                }) {
                     Text(stringResource(R.string.cancel))
                 }
             }
@@ -424,21 +427,14 @@ fun PackageGroupCard(
                         .background(statusColor.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (first.photoUri != null) {
-                        AsyncImage(
-                            model = first.photoUri,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Inventory2,
-                            contentDescription = null,
-                            tint = statusColor.copy(alpha = 0.7f),
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
+                    // Multi-item header always shows the package icon, never a photo —
+                    // sub-rows below show each package's individual photo.
+                    Icon(
+                        imageVector = Icons.Default.Inventory2,
+                        contentDescription = null,
+                        tint = statusColor.copy(alpha = 0.7f),
+                        modifier = Modifier.size(32.dp)
+                    )
                     // Count badge overlay
                     Box(
                         modifier = Modifier
