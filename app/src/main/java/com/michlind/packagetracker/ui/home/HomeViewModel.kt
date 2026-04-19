@@ -42,7 +42,8 @@ private fun List<TrackedPackage>.toGroups(): List<PackageGroup> =
     groupBy { it.trackingNumber.ifBlank { it.id.toString() } }
         .entries
         .map { (tn, pkgs) ->
-            val sorted = pkgs.sortedByDescending { it.orderDate() }
+            // Sub-items inside a group: sort alphabetically by name (case-insensitive).
+            val sorted = pkgs.sortedBy { it.name.lowercase() }
             PackageGroup(
                 trackingNumber = tn,
                 packages = sorted,
