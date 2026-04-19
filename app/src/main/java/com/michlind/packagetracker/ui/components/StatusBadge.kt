@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.GppBad
 import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.LocalPostOffice
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material3.Icon
@@ -71,8 +72,8 @@ fun StatusBadge(status: PackageStatus, modifier: Modifier = Modifier) {
 fun PackageStatus.colorAndIcon(): Pair<Color, ImageVector> = when (this) {
     PackageStatus.NOT_YET_SENT     -> StatusNotYetSent     to Icons.Default.HourglassEmpty
     PackageStatus.ORDER_PLACED     -> StatusOrderPlaced    to Icons.Default.ShoppingBag
-    PackageStatus.SHIPPED          -> StatusShipped        to Icons.Default.FlightTakeoff
-    PackageStatus.IN_TRANSIT       -> StatusInTransit      to Icons.Default.LocalShipping
+    PackageStatus.SHIPPED          -> StatusShipped        to Icons.Default.LocalPostOffice
+    PackageStatus.IN_TRANSIT       -> StatusInTransit      to Icons.Default.FlightTakeoff
     PackageStatus.CUSTOMS_EXPORT   -> StatusCustomsExport  to Icons.Default.ArrowCircleUp
     PackageStatus.CUSTOMS_IMPORT   -> StatusCustomsImport  to Icons.Default.ArrowCircleDown
     PackageStatus.CUSTOMS          -> StatusCustoms        to Icons.Default.GppBad
