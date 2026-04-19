@@ -260,6 +260,14 @@ private fun DetailContent(
                             modifier = Modifier.padding(top = 4.dp)
                         )
                     }
+                    if (pkg.trackingNumber.isNotBlank()) {
+                        Text(
+                            text = pkg.trackingNumber,
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
                     Row(
                         modifier = Modifier.padding(top = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
