@@ -30,6 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -128,10 +129,16 @@ fun DetailScreen(
                     }
                 },
                 actions = {
-                    if (isRefreshing) {
-                        // Show progress indicator inline
-                    } else {
-                        IconButton(onClick = { viewModel.refresh(packageId) }) {
+                    IconButton(
+                        onClick = { if (!isRefreshing) viewModel.refresh(packageId) },
+                        enabled = !isRefreshing
+                    ) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
                             Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
                         }
                     }

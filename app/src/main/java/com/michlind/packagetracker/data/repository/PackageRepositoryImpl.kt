@@ -94,23 +94,35 @@ class PackageRepositoryImpl @Inject constructor(
 
     override suspend fun refreshPackage(id: Long): Result<Boolean> {
         val existing = dao.getById(id) ?: return Result.failure(Exception("Package not found"))
-        val result = trackPackage(existing.trackingNumber)
-        return result.map { tracking ->
-            val statusChanged = existing.status != tracking.status.name
-            val updatedEntity = existing.copy(
-                status = tracking.status.name,
-                statusDescription = tracking.statusDescription,
-                lastEventDescription = tracking.events.firstOrNull()?.description.orEmpty(),
-                lastEventTime = tracking.events.firstOrNull()?.time ?: existing.lastEventTime,
-                lastUpdated = System.currentTimeMillis(),
-                eventsJson = gson.toJson(tracking.events),
-                estimatedDeliveryTime = tracking.estimatedDeliveryTime,
-                daysInTransit = tracking.daysInTransit,
-                originCountry = tracking.originCountry,
-                destCountry = tracking.destCountry
-            )
-            dao.update(updatedEntity)
-            statusChanged
+        return refreshTrackingNumber(existing.trackingNumber).map { changes ->
+            changes[id] ?: false
+        }
+    }
+
+    override suspend fun refreshTrackingNumber(trackingNumber: String): Result<Map<Long, Boolean>> {
+        val existingRows = dao.getByTrackingNumber(trackingNumber)
+        if (existingRows.isEmpty()) return Result.failure(Exception("Package not found"))
+        return trackPackage(trackingNumber).map { tracking ->
+            val now = System.currentTimeMillis()
+            val eventsJson = gson.toJson(tracking.events)
+            val firstEvent = tracking.events.firstOrNull()
+            existingRows.associate { existing ->
+                val statusChanged = existing.status != tracking.status.name
+                val updated = existing.copy(
+                    status = tracking.status.name,
+                    statusDescription = tracking.statusDescription,
+                    lastEventDescription = firstEvent?.description.orEmpty(),
+                    lastEventTime = firstEvent?.time ?: existing.lastEventTime,
+                    lastUpdated = now,
+                    eventsJson = eventsJson,
+                    estimatedDeliveryTime = tracking.estimatedDeliveryTime,
+                    daysInTransit = tracking.daysInTransit,
+                    originCountry = tracking.originCountry,
+                    destCountry = tracking.destCountry
+                )
+                dao.update(updated)
+                existing.id to statusChanged
+            }
         }
     }
 

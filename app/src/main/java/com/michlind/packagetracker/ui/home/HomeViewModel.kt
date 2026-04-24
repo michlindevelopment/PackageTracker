@@ -10,7 +10,7 @@ import com.michlind.packagetracker.domain.usecase.GetActivePackagesUseCase
 import com.michlind.packagetracker.domain.usecase.GetNotYetSentPackagesUseCase
 import com.michlind.packagetracker.domain.usecase.GetReceivedPackagesUseCase
 import com.michlind.packagetracker.domain.usecase.MarkAsReceivedUseCase
-import com.michlind.packagetracker.domain.usecase.RefreshPackageUseCase
+import com.michlind.packagetracker.domain.usecase.RefreshTrackingNumberUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -62,7 +62,7 @@ class HomeViewModel @Inject constructor(
     private val deletePackage: DeletePackageUseCase,
     private val addPackage: AddPackageUseCase,
     private val markAsReceived: MarkAsReceivedUseCase,
-    private val refreshPackage: RefreshPackageUseCase
+    private val refreshTrackingNumber: RefreshTrackingNumberUseCase
 ) : ViewModel() {
 
     val activeGroups: StateFlow<List<PackageGroup>> = getActivePackages()
@@ -112,9 +112,11 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
-                activeGroups.value.flatMap { it.packages }.forEach { pkg ->
-                    refreshPackage(pkg.id)
-                }
+                activeGroups.value
+                    .map { it.trackingNumber }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .forEach { tn -> refreshTrackingNumber(tn) }
             } catch (_: Exception) {
                 _errorMessage.value = "Failed to refresh packages"
             } finally {

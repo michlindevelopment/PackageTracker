@@ -25,7 +25,9 @@
       "Bash(unzip -q \"/c/Users/michl/.gradle/caches/modules-2/files-2.1/com.vanniktech/android-image-cropper/4.7.0/\"*/android-image-cropper-4.7.0-sources.jar \"com/canhub/cropper/CropImageOptions.kt\")",
       "Bash(unzip -q \"/c/Users/michl/.gradle/caches/modules-2/files-2.1/com.vanniktech/android-image-cropper/4.6.0/\"*/android-image-cropper-4.6.0-sources.jar \"com/canhub/cropper/CropImageOptions.kt\")",
       "WebFetch(domain:github.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(./gradlew.bat :app:compileDebugKotlin --no-daemon -q)",
+      "Bash(./gradlew.bat :app:compileDebugKotlin --no-daemon)"
     ]
   }
 }

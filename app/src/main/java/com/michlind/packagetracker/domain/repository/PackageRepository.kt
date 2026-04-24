@@ -16,4 +16,10 @@ interface PackageRepository {
     suspend fun markAsReceived(id: Long, isReceived: Boolean)
     suspend fun trackPackage(trackingNumber: String): Result<TrackingResult>
     suspend fun refreshPackage(id: Long): Result<Boolean>
+
+    /**
+     * Refresh all packages sharing [trackingNumber] with a single API call.
+     * Returns a map of package id → whether its status changed.
+     */
+    suspend fun refreshTrackingNumber(trackingNumber: String): Result<Map<Long, Boolean>>
 }

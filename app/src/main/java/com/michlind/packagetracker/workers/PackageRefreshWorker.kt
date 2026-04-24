@@ -25,17 +25,22 @@ class PackageRefreshWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         return try {
             val packages = repository.getNonReceivedPackages()
-            packages.forEach { pkg ->
-                val result = repository.refreshPackage(pkg.id)
-                result.onSuccess { statusChanged ->
-                    if (statusChanged) {
-                        val updated = repository.getPackageById(pkg.id)
-                        NotificationUtils.sendStatusUpdateNotification(
-                            context = applicationContext,
-                            packageId = pkg.id,
-                            packageName = pkg.name.ifBlank { pkg.trackingNumber },
-                            newStatus = updated?.status?.displayName ?: "Updated"
-                        )
+            val byTracking = packages
+                .filter { it.trackingNumber.isNotBlank() }
+                .groupBy { it.trackingNumber }
+
+            byTracking.forEach { (trackingNumber, pkgs) ->
+                repository.refreshTrackingNumber(trackingNumber).onSuccess { changes ->
+                    pkgs.forEach { pkg ->
+                        if (changes[pkg.id] == true) {
+                            val updated = repository.getPackageById(pkg.id)
+                            NotificationUtils.sendStatusUpdateNotification(
+                                context = applicationContext,
+                                packageId = pkg.id,
+                                packageName = pkg.name.ifBlank { pkg.trackingNumber },
+                                newStatus = updated?.status?.displayName ?: "Updated"
+                            )
+                        }
                     }
                 }
             }
