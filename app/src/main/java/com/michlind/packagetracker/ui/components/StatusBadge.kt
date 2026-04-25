@@ -49,7 +49,7 @@ fun StatusBadge(status: PackageStatus, modifier: Modifier = Modifier) {
     val (color, icon) = status.colorAndIcon()
     Row(
         modifier = modifier
-            .background(color.copy(alpha = 0.15f), RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.22f), RoundedCornerShape(50))
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -66,6 +66,23 @@ fun StatusBadge(status: PackageStatus, modifier: Modifier = Modifier) {
             fontSize = 11.sp,
             style = MaterialTheme.typography.labelMedium
         )
+    }
+}
+
+@androidx.compose.ui.tooling.preview.PreviewLightDark
+@Composable
+private fun StatusBadgePreview() {
+    com.michlind.packagetracker.ui.theme.PackageTrackerTheme(dynamicColor = false) {
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier
+                .background(MaterialTheme.colorScheme.background)
+                .padding(16.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+        ) {
+            PackageStatus.entries.forEach { status ->
+                StatusBadge(status = status)
+            }
+        }
     }
 }
 

@@ -2,6 +2,7 @@ package com.michlind.packagetracker.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,8 +45,8 @@ fun PackageCard(
     val (statusColor, _) = pkg.status.colorAndIcon()
     val gradient = Brush.linearGradient(
         colors = listOf(
-            statusColor.copy(alpha = 0.10f),
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.0f)
+            statusColor.copy(alpha = 0.18f),
+            statusColor.copy(alpha = 0.04f)
         ),
         start = Offset(0f, 0f),
         end = Offset(600f, 300f)
@@ -53,9 +54,9 @@ fun PackageCard(
 
     Box(
         modifier = modifier
-            .shadow(elevation = 3.dp, shape = RoundedCornerShape(16.dp), clip = false)
+            .shadow(elevation = 4.dp, shape = RoundedCornerShape(16.dp), clip = false)
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .background(gradient)
             .clickable(onClick = onClick)
     ) {
@@ -68,7 +69,7 @@ fun PackageCard(
                 modifier = Modifier
                     .size(68.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(statusColor.copy(alpha = 0.12f)),
+                    .background(statusColor.copy(alpha = 0.22f)),
                 contentAlignment = Alignment.Center
             ) {
                 if (pkg.photoUri != null) {
@@ -143,6 +144,58 @@ fun PackageCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@PreviewLightDark
+@Composable
+private fun PackageCardPreview() {
+    com.michlind.packagetracker.ui.theme.PackageTrackerTheme(dynamicColor = false) {
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier
+                .background(MaterialTheme.colorScheme.background)
+                .padding(12.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+        ) {
+            PackageCard(
+                pkg = com.michlind.packagetracker.ui.preview.samplePackage(
+                    name = "AliExpress Headphones",
+                    status = com.michlind.packagetracker.domain.model.PackageStatus.IN_TRANSIT
+                ),
+                onClick = {}
+            )
+            PackageCard(
+                pkg = com.michlind.packagetracker.ui.preview.samplePackage(
+                    id = 2,
+                    name = "Phone case",
+                    status = com.michlind.packagetracker.domain.model.PackageStatus.OUT_FOR_DELIVERY,
+                    daysInTransit = "21 days"
+                ),
+                onClick = {}
+            )
+            PackageCard(
+                pkg = com.michlind.packagetracker.ui.preview.samplePackage(
+                    id = 3,
+                    name = "Charging cable",
+                    status = com.michlind.packagetracker.domain.model.PackageStatus.DELIVERED,
+                    daysInTransit = null
+                ),
+                onClick = {}
+            )
+            PackageCard(
+                pkg = com.michlind.packagetracker.ui.preview.samplePackage(
+                    id = 4,
+                    name = "USB hub",
+                    status = com.michlind.packagetracker.domain.model.PackageStatus.ORDER_PLACED,
+                    daysInTransit = "1 day",
+                    lastEvent = com.michlind.packagetracker.ui.preview.sampleEvent(
+                        description = "Awaiting seller dispatch",
+                        actionCode = ""
+                    )
+                ),
+                onClick = {}
+            )
         }
     }
 }
