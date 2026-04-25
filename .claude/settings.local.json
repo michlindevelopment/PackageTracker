@@ -1,33 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/domain/model/TrackingEvent.kt)",
-      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/domain/model/TrackedPackage.kt)",
-      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/domain/model/TrackingResult.kt)",
-      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/domain/repository/PackageRepository.kt)",
-      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/ui/components/StatusBadge.kt)",
-      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/ui/components/TimelineItem.kt)",
-      "Bash(tee /c/Development/Projects/PackageTracker/app/src/main/java/com/michlind/packagetracker/ui/components/EmptyState.kt)",
-      "Bash(ls /c/Development/Projects/PackageTracker/*.kts /c/Development/Projects/PackageTracker/app/*.kts)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://jitpack.io/com/github/CanHub/Android-Image-Cropper/)",
-      "Bash(curl -s https://jitpack.io/com/github/CanHub/Android-Image-Cropper/)",
-      "Bash(curl -s https://api.github.com/repos/CanHub/Android-Image-Cropper/releases/latest)",
-      "Bash(curl -s \"https://search.maven.org/solrsearch/select?q=a:android-image-cropper&rows=20&wt=json\")",
-      "Bash(curl -s \"https://raw.githubusercontent.com/CanHub/Android-Image-Cropper/main/cropper/src/main/java/com/canhub/cropper/CropImageContract.kt\")",
-      "Bash(curl -s \"https://raw.githubusercontent.com/CanHub/Android-Image-Cropper/main/README.md\")",
-      "Bash(curl *)",
+      "Bash(*)",
       "Read(//tmp/**)",
-      "Bash(unzip -q -o \"/c/Users/michl/.gradle/caches/modules-2/files-2.1/com.vanniktech/android-image-cropper/4.6.0/76aad414a9d015f47c2f0e284ceab2e41410069a/android-image-cropper-4.6.0-sources.jar\" \"com/canhub/cropper/CropImageContractOptions.kt\" \"com/canhub/cropper/Extensions.kt\")",
-      "Bash(unzip -l \"/c/Users/michl/.gradle/caches/modules-2/files-2.1/com.vanniktech/android-image-cropper/4.6.0/76aad414a9d015f47c2f0e284ceab2e41410069a/android-image-cropper-4.6.0-sources.jar\")",
-      "Bash(unzip -q -o \"/c/Users/michl/.gradle/caches/modules-2/files-2.1/com.vanniktech/android-image-cropper/4.6.0/76aad414a9d015f47c2f0e284ceab2e41410069a/android-image-cropper-4.6.0-sources.jar\" \"com/canhub/cropper/CropImageContractOptions.kt\" \"com/canhub/cropper/ParcelableUtils.kt\")",
-      "Bash(unzip -q -o \"/c/Users/michl/.gradle/caches/modules-2/files-2.1/com.vanniktech/android-image-cropper/4.6.0/76aad414a9d015f47c2f0e284ceab2e41410069a/android-image-cropper-4.6.0-sources.jar\" \"com/canhub/cropper/CropImage.kt\")",
-      "Bash(rm -rf com)",
-      "Bash(unzip -q \"/c/Users/michl/.gradle/caches/modules-2/files-2.1/com.vanniktech/android-image-cropper/4.7.0/\"*/android-image-cropper-4.7.0-sources.jar \"com/canhub/cropper/CropImageOptions.kt\")",
-      "Bash(unzip -q \"/c/Users/michl/.gradle/caches/modules-2/files-2.1/com.vanniktech/android-image-cropper/4.6.0/\"*/android-image-cropper-4.6.0-sources.jar \"com/canhub/cropper/CropImageOptions.kt\")",
       "WebFetch(domain:github.com)",
-      "WebSearch",
-      "Bash(./gradlew.bat :app:compileDebugKotlin --no-daemon -q)",
-      "Bash(./gradlew.bat :app:compileDebugKotlin --no-daemon)"
+      "WebSearch"
     ]
   }
 }
