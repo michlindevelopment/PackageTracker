@@ -16,6 +16,15 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
+// Cainiao action codes that are forecasts/advisory notifications rather than
+// real package progress — they show up at the top of the trace list but the
+// package may be far earlier in its journey. Skip these when deriving status.
+private val ADVISORY_ACTION_CODES = setOf(
+    // Destination carrier was notified the package will eventually arrive,
+    // but the package itself is typically still at origin.
+    "LAST_MILE_ASN_NOTIFY"
+)
+
 @Singleton
 class PackageRepositoryImpl @Inject constructor(
     private val dao: PackageDao,
@@ -73,7 +82,14 @@ class PackageRepositoryImpl @Inject constructor(
                 )
             } ?: emptyList()
 
-            val latestActionCode = events.firstOrNull()?.actionCode
+            // Cainiao sometimes prepends advisory entries (e.g. an
+            // Advance Shipping Notice from the destination courier) that don't
+            // reflect actual package movement. Skip those when picking the
+            // latest meaningful action code so a forecast doesn't get treated
+            // as the real state.
+            val latestActionCode = events.firstOrNull {
+                it.actionCode.isNotBlank() && it.actionCode !in ADVISORY_ACTION_CODES
+            }?.actionCode
             val status = StatusMapper.map(data.status, latestActionCode)
 
             Result.success(
