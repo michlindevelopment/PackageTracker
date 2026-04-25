@@ -22,7 +22,9 @@ object DatabaseModule {
             context,
             PackageDatabase::class.java,
             "package_tracker.db"
-        ).build()
+        )
+            .addMigrations(PackageDatabase.MIGRATION_1_2)
+            .build()
 
     @Provides
     fun providePackageDao(db: PackageDatabase): PackageDao = db.packageDao()

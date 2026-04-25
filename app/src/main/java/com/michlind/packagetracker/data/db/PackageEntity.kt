@@ -1,9 +1,13 @@
 package com.michlind.packagetracker.data.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "packages")
+@Entity(
+    tableName = "packages",
+    indices = [Index(value = ["externalOrderId"], unique = false)]
+)
 data class PackageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val trackingNumber: String,
@@ -20,5 +24,6 @@ data class PackageEntity(
     val estimatedDeliveryTime: Long?,
     val daysInTransit: String?,
     val originCountry: String?,
-    val destCountry: String?
+    val destCountry: String?,
+    val externalOrderId: String? = null
 )

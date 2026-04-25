@@ -10,4 +10,5 @@ sealed class Screen(val route: String) {
             if (packageId != null) "add_edit?packageId=$packageId" else "add_edit"
     }
     data object Settings : Screen("settings")
+    data object AliImport : Screen("aliexpress_import")
 }

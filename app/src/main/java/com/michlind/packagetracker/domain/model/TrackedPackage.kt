@@ -15,5 +15,6 @@ data class TrackedPackage(
     val estimatedDeliveryTime: Long?,
     val daysInTransit: String?,
     val originCountry: String?,
-    val destCountry: String?
+    val destCountry: String?,
+    val externalOrderId: String? = null
 )

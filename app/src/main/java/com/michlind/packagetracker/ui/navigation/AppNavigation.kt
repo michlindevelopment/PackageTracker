@@ -15,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.michlind.packagetracker.ui.add.AddEditScreen
+import com.michlind.packagetracker.ui.aliimport.AliImportScreen
 import com.michlind.packagetracker.ui.attach.AttachImageSheet
 import com.michlind.packagetracker.ui.detail.DetailScreen
 import com.michlind.packagetracker.ui.home.HomeScreen
@@ -74,7 +75,14 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
         }
 
         composable(Screen.Settings.route) {
-            SettingsScreen(onBack = { navController.popBackStack() })
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onImportFromAliExpress = { navController.navigate(Screen.AliImport.route) }
+            )
+        }
+
+        composable(Screen.AliImport.route) {
+            AliImportScreen(onBack = { navController.popBackStack() })
         }
 
         composable(

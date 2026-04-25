@@ -99,6 +99,9 @@ class PackageRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getByExternalOrderId(externalOrderId: String): TrackedPackage? =
+        dao.getByExternalOrderId(externalOrderId)?.toDomain()
+
     override suspend fun refreshTrackingNumber(trackingNumber: String): Result<Map<Long, Boolean>> {
         val existingRows = dao.getByTrackingNumber(trackingNumber)
         if (existingRows.isEmpty()) return Result.failure(Exception("Package not found"))
@@ -155,7 +158,8 @@ class PackageRepositoryImpl @Inject constructor(
             estimatedDeliveryTime = estimatedDeliveryTime,
             daysInTransit = daysInTransit,
             originCountry = originCountry,
-            destCountry = destCountry
+            destCountry = destCountry,
+            externalOrderId = externalOrderId
         )
     }
 
@@ -175,6 +179,7 @@ class PackageRepositoryImpl @Inject constructor(
         estimatedDeliveryTime = estimatedDeliveryTime,
         daysInTransit = daysInTransit,
         originCountry = originCountry,
-        destCountry = destCountry
+        destCountry = destCountry,
+        externalOrderId = externalOrderId
     )
 }

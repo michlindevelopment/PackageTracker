@@ -29,6 +29,9 @@ interface PackageDao {
     @Query("SELECT * FROM packages WHERE trackingNumber = :trackingNumber")
     suspend fun getByTrackingNumber(trackingNumber: String): List<PackageEntity>
 
+    @Query("SELECT * FROM packages WHERE externalOrderId = :externalOrderId LIMIT 1")
+    suspend fun getByExternalOrderId(externalOrderId: String): PackageEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: PackageEntity): Long
 

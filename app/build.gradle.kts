@@ -10,7 +10,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.michlind.packagetracker"
+        applicationId = "com.michlind.packagetracker1"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

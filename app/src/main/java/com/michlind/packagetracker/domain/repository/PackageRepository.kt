@@ -22,4 +22,6 @@ interface PackageRepository {
      * Returns a map of package id → whether its status changed.
      */
     suspend fun refreshTrackingNumber(trackingNumber: String): Result<Map<Long, Boolean>>
+
+    suspend fun getByExternalOrderId(externalOrderId: String): TrackedPackage?
 }
