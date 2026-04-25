@@ -575,6 +575,16 @@
         var anyTitle = card.querySelector('.order-item-content-info-name');
         if (anyTitle) name = (anyTitle.innerText || anyTitle.textContent || '').trim();
       }
+      // Multi-item orders sometimes omit `.order-item-content-info-name`
+      // entirely and only show product images. Fall back to the store name
+      // so the card has *some* identifying label.
+      if (!name) {
+        var storeName = card.querySelector('.order-item-store-name');
+        if (storeName) {
+          var sn = (storeName.innerText || storeName.textContent || '').trim();
+          if (sn) name = sn;
+        }
+      }
 
       // 3) Image — extract URL from the inline background-image style.
       var imageUrl = '';

@@ -49,9 +49,12 @@ class ImportAliOrderUseCase @Inject constructor(
                     val localPhoto = order.imageUrl?.let {
                         imageDownloader.download(it, fileBaseName = order.orderId)
                     }
+                    // The card status is authoritative — a missing tracking
+                    // number on an "Awaiting delivery" card just means we
+                    // couldn't scrape it, NOT that the order hasn't shipped.
                     val status = when {
                         received -> PackageStatus.DELIVERED
-                        notYetShipped || tn.isBlank() -> PackageStatus.NOT_YET_SENT
+                        notYetShipped -> PackageStatus.NOT_YET_SENT
                         else -> PackageStatus.ORDER_PLACED
                     }
                     val pkg = TrackedPackage(
