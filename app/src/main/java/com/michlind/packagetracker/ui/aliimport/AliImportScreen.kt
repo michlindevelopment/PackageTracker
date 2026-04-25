@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -59,6 +62,7 @@ private const val DESKTOP_UA =
 @Composable
 fun AliImportScreen(
     onBack: () -> Unit,
+    onDone: () -> Unit = onBack,
     viewModel: AliImportViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -110,9 +114,22 @@ fun AliImportScreen(
 
                                 override fun onPageFinished(view: WebView, url: String) {
                                     Log.d(TAG, "onPageFinished: $url")
-                                    if (url.contains("/p/order/index.html") ||
-                                        url.contains("/p/order/")
-                                    ) {
+                                    val isOrdersPage = url.contains("/p/order/")
+                                    val isLoginPage = url.contains("login.aliexpress")
+                                    // After login AliExpress drops the user on
+                                    // m.aliexpress.com/account/... — if we have a
+                                    // session cookie (`sign=y`) but aren't on the
+                                    // orders page, force-navigate there.
+                                    if (!isOrdersPage && !isLoginPage) {
+                                        val cookies = CookieManager.getInstance()
+                                            .getCookie("https://www.aliexpress.com").orEmpty()
+                                        if (cookies.contains("sign=y")) {
+                                            Log.d(TAG, "Logged in, not on orders → bouncing to orders")
+                                            view.loadUrl(ORDERS_URL)
+                                            return
+                                        }
+                                    }
+                                    if (isOrdersPage) {
                                         viewModel.onOrdersPageLoaded()
                                     }
                                 }
@@ -157,6 +174,23 @@ fun AliImportScreen(
                         }
                     }
                 )
+                // Once the user is logged in (state has left Idle), swallow all
+                // touches so they can't accidentally click links inside the
+                // WebView and navigate away from the orders page.
+                if (state !is AliImportState.Idle) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        val ev = awaitPointerEvent()
+                                        ev.changes.forEach { it.consume() }
+                                    }
+                                }
+                            }
+                    )
+                }
             }
 
             ActionBar(
@@ -174,7 +208,7 @@ fun AliImportScreen(
                         webViewRef.value?.evaluateJavascript(js, null)
                     }
                 },
-                onDone = onBack,
+                onDone = onDone,
                 onRetry = { viewModel.reset() }
             )
         }
@@ -265,8 +299,14 @@ private fun ActionBar(
     ) {
         when (state) {
             AliImportState.ReadyToImport -> Button(onClick = onStart) { Text("Start import") }
-            is AliImportState.Importing -> {
-                CircularProgressIndicator(modifier = Modifier.height(24.dp))
+            is AliImportState.Importing -> Button(onClick = {}, enabled = false) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Importing…")
             }
             is AliImportState.Completed -> Button(onClick = onDone) { Text("Done") }
             is AliImportState.Error -> Button(onClick = onRetry) { Text("Retry") }

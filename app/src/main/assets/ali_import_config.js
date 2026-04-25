@@ -2,17 +2,15 @@
 // Loaded by AliImportScreen before ali_import.js so the main script can read
 // from window.__AliImportConfig (with safe fallbacks).
 window.__AliImportConfig = {
-  // Maximum number of "view more" expansion clicks before we stop expanding
-  // and start fetching pages. Each click reveals one more page of older
-  // orders — we then import everything those expansions exposed (no separate
-  // order cap).
-  maxExpandPasses: 5,
-
-  // Listing source. Prefer DOM (what you actually see on the page after the
-  // "view more" expansion); the MTOP API ignores pageIndex and only returns
-  // the first batch, so it's used only as a fallback when the DOM extractor
-  // returns 0 orders.
+  // Listing source. Prefer DOM (what you actually see on the page after
+  // clicking through the "To ship" and "Shipped" tabs); the MTOP API ignores
+  // pageIndex and only returns the first batch, so it's used only as a
+  // fallback when the DOM extractor returns 0 orders.
   domListingEnabled: true,
+
+  // After clicking a tab, wait this long for AliExpress to render the new
+  // list before starting expansion / extraction.
+  tabSettleMs: 1500,
 
   // Listing pagination (legacy API path).
   listPageSize: 20,
@@ -38,11 +36,12 @@ window.__AliImportConfig = {
   domHoverPostDelayMs: 150,
   domScrapeTimeoutMs: 4000,
 
-  // Expander loop timing.
+  // Expander loop timing — delay between successive "View more" clicks.
   expandClickDelayMs: 1200,
-  expandEmptyPassDelayMs: 800,
-  // Stop expanding after N consecutive passes that find no buttons.
-  expandEmptyPassesNeeded: 2,
+  // Safety cap on expansion passes. We expect "To ship" and "Shipped" tabs
+  // to never need more than a handful of clicks, but cap at 20 just in case
+  // AliExpress ever shows a runaway list.
+  maxExpandPasses: 20,
 
   // mtop library wait — script gives up if lib.mtop isn't ready in time.
   mtopWaitIntervalMs: 200,

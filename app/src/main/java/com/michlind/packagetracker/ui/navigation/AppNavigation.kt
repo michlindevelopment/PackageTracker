@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -60,7 +61,10 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
             )
         }
     ) {
-        composable(Screen.Home.route) {
+        composable(Screen.Home.route) { backStackEntry ->
+            val refreshSignal by backStackEntry.savedStateHandle
+                .getStateFlow("aliImportDone", false)
+                .collectAsStateWithLifecycle()
             HomeScreen(
                 onPackageClick = { id ->
                     navController.navigate(Screen.Detail.createRoute(id))
@@ -70,6 +74,10 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 },
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
+                },
+                refreshAndShowInTransit = refreshSignal,
+                onRefreshConsumed = {
+                    backStackEntry.savedStateHandle["aliImportDone"] = false
                 }
             )
         }
@@ -82,7 +90,16 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
         }
 
         composable(Screen.AliImport.route) {
-            AliImportScreen(onBack = { navController.popBackStack() })
+            AliImportScreen(
+                onBack = { navController.popBackStack() },
+                onDone = {
+                    // Signal Home to switch to In Transit + refresh, then pop
+                    // both AliImport and Settings off the stack in one step.
+                    navController.getBackStackEntry(Screen.Home.route)
+                        .savedStateHandle["aliImportDone"] = true
+                    navController.popBackStack(Screen.Home.route, inclusive = false)
+                }
+            )
         }
 
         composable(

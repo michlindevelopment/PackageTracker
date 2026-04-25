@@ -85,6 +85,8 @@ fun HomeScreen(
     onPackageClick: (Long) -> Unit,
     onAddClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    refreshAndShowInTransit: Boolean = false,
+    onRefreshConsumed: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val activeGroups by viewModel.activeGroups.collectAsStateWithLifecycle()
@@ -108,6 +110,16 @@ fun HomeScreen(
         if (errorMessage != null) {
             snackbarHostState.showSnackbar(errorMessage!!)
             viewModel.clearError()
+        }
+    }
+
+    // Triggered when the user finishes an AliExpress import — switch to the
+    // In Transit tab and refresh tracking statuses for the newly-imported items.
+    LaunchedEffect(refreshAndShowInTransit) {
+        if (refreshAndShowInTransit) {
+            selectedTab = 1
+            viewModel.refreshAll()
+            onRefreshConsumed()
         }
     }
 

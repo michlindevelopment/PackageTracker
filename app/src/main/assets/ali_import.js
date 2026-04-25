@@ -49,15 +49,13 @@
   // Load configuration with fallbacks so the script still runs if
   // ali_import_config.js wasn't loaded for some reason.
   var DEFAULTS = {
-    maxExpandPasses: 5,
     listPageSize: 20,
     listInterPageDelayMs: 200,
     forceDetailFetch: true,
     detailFetchDelayMs: 200,
     noDetailDelayMs: 50,
     expandClickDelayMs: 1200,
-    expandEmptyPassDelayMs: 800,
-    expandEmptyPassesNeeded: 2,
+    maxExpandPasses: 20,
     mtopWaitIntervalMs: 200,
     mtopWaitMaxTries: 50,
     domTrackingEnabled: true,
@@ -68,7 +66,8 @@
     domHoverPollMaxTries: 30,
     domHoverPostDelayMs: 150,
     domScrapeTimeoutMs: 4000,
-    domListingEnabled: true
+    domListingEnabled: true,
+    tabSettleMs: 1500
   };
   var CFG = (function () {
     var src = window.__AliImportConfig || {};
@@ -180,56 +179,50 @@
     el.dispatchEvent(new MouseEvent('click', opts));
   }
 
-  function expandAllOrders() {
+  // The orders page has a `comet-tabs-nav-item` row at the top. We import only
+  // from the "To ship" and "Shipped" tabs — completed/received orders are
+  // intentionally skipped per user preference. The match function gets the
+  // trimmed lowercased label so it can apply whatever shape the tab uses
+  // (e.g. "To ship", "To ship (5)", "To Ship 5").
+  function clickTab(matchFn, debugName) {
     return new Promise(function (resolve) {
-      var emptyPasses = 0;
-      var pass = 0;
-      // Counts only passes where we actually clicked a button — that way an
-      // early "still rendering" empty pass doesn't burn the budget.
-      var clickPasses = 0;
-      function step() {
-        pass++;
-        var hits = findExpanders();
-
-        // Scroll-trigger any IntersectionObserver-based lazy loaders.
-        try { window.scrollTo(0, document.body.scrollHeight); } catch (_) {}
-
-        if (hits.length === 0) {
-          emptyPasses++;
-          if (emptyPasses >= CFG.expandEmptyPassesNeeded) {
-            console.log('[Ali] expandAllOrders done pass=' + pass +
-              ' clickPasses=' + clickPasses + ' (no more expanders)');
-            resolve();
-            return;
-          }
-          setTimeout(step, CFG.expandEmptyPassDelayMs);
-          return;
-        }
-        emptyPasses = 0;
-
-        if (clickPasses >= CFG.maxExpandPasses) {
-          console.log('[Ali] expandAllOrders cap reached clickPasses=' + clickPasses +
-            ' (maxExpandPasses=' + CFG.maxExpandPasses + ')');
-          resolve();
-          return;
-        }
-        clickPasses++;
-
-        console.log('[Ali] expand pass ' + clickPasses + '/' + CFG.maxExpandPasses +
-          ': clicking ' + hits.length + ' [' +
-          hits.map(function (h) { return '"' + h.text + '" (' + h.source + ')'; }).join(', ') + ']');
-        for (var i = 0; i < hits.length; i++) {
-          try {
-            hits[i].el.scrollIntoView({ block: 'center' });
-            realClick(hits[i].el);
-          } catch (e) {
-            console.log('[Ali] click failed: ' + (e && e.message));
-          }
-        }
-        setTimeout(step, CFG.expandClickDelayMs);
+      var tabs = document.querySelectorAll('.comet-tabs-nav-item, [role="tab"]');
+      if (tabs.length === 0) {
+        console.log('[Ali] no tab elements found — skipping ' + debugName + ' click');
+        resolve();
+        return;
       }
-      step();
+      var labels = [];
+      for (var i = 0; i < tabs.length; i++) {
+        var t = tabs[i];
+        var raw = (t.innerText || t.textContent || '').trim();
+        labels.push(raw);
+        var norm = raw.toLowerCase().replace(/\s+/g, ' ').trim();
+        if (matchFn(norm)) {
+          console.log('[Ali] clicking "' + raw + '" tab (matched ' + debugName + ')');
+          try { t.scrollIntoView({ block: 'center' }); } catch (_) {}
+          try { realClick(t); } catch (e) {
+            console.log('[Ali] tab click (synthetic) failed: ' + (e && e.message));
+          }
+          // Fallback to native click in case React's handler is bound on click only.
+          try { t.click(); } catch (_) {}
+          setTimeout(resolve, CFG.tabSettleMs);
+          return;
+        }
+      }
+      console.log('[Ali] no tab matched ' + debugName + '; tabs=' + JSON.stringify(labels));
+      resolve();
     });
+  }
+
+  // "To ship" matchers: must contain "to ship" but NOT immediately followed by
+  // "ped" (which would be "shipped"). Allows trailing count badges.
+  function isToShipLabel(s) {
+    return /(^|[^a-z])to\s*ship(?!ped)([^a-z]|$)/.test(s);
+  }
+  // "Shipped" matcher: must contain "shipped" as a standalone word.
+  function isShippedLabel(s) {
+    return /(^|[^a-z])shipped([^a-z]|$)/.test(s);
   }
 
   function getCookie(name, key) {
@@ -396,6 +389,19 @@
     return isNaN(t) ? Date.now() : t;
   }
 
+  // Classify the AliExpress card status. The three statuses we care about:
+  //   "Ready to ship"     -> not yet sent (no tracking number to look up)
+  //   "Awaiting delivery" -> in transit (default; falls through both checks)
+  //   "Completed"         -> received
+  function isNotYetShipped(statusText) {
+    var s = (statusText || '').toLowerCase();
+    return /ready\s*to\s*ship/.test(s);
+  }
+  function isReceivedStatus(statusText) {
+    var s = (statusText || '').toLowerCase();
+    return s.indexOf('complet') !== -1;
+  }
+
   // After expansion finishes, dump enough state to figure out where the order
   // cards live in the DOM (or whether they live in the DOM at all).
   function dumpPostExpandDomState() {
@@ -456,19 +462,25 @@
     }
   }
 
-  // Each AliExpress order card is `<div class="order-item">`. Inside it:
+  // Each AliExpress order card is `<div class="order-item">` (or
+  // `<a class="order-item order-item-mobile">` in the mobile variant). Inside:
   //   * `.order-item-header-right-info` carries "Order ID: <digits>" + "Order date: ..."
   //   * the Track button is an `<a class="...order-item-btn">` whose href has
   //     `tradeOrderId=<digits>` — that's the most reliable id source.
+  //   * for mobile cards, the card itself is the link with orderId in its href.
   //   * product title lives in `.order-item-content-info-name span[title]`
   //   * product image is a CSS `background-image` on `.order-item-content-img`.
   function extractOrdersFromDOM() {
     var cards = document.querySelectorAll('.order-item');
     var orders = [];
     var seen = Object.create(null);
+    var skipped = [];
 
     for (var i = 0; i < cards.length; i++) {
       var card = cards[i];
+
+      var statusElDbg = card.querySelector('.order-item-header-status-text');
+      var statusDbg = statusElDbg ? (statusElDbg.innerText || statusElDbg.textContent || '').trim() : '<no-status-el>';
 
       // 1) Order ID — prefer the track link's tradeOrderId param.
       var orderId = null;
@@ -477,13 +489,79 @@
         var hm = (trackLink.getAttribute('href') || '').match(/tradeOrderId=(\d{10,20})/);
         if (hm) orderId = hm[1];
       }
+      var fallbackUsed = '';
       if (!orderId) {
-        var headerInfo = card.querySelector('.order-item-header-right-info');
+        var headerInfo = card.querySelector('.order-item-header-right-info') ||
+                         card.querySelector('[data-pl="order_item_header_info"]');
         var headerText = headerInfo ? (headerInfo.innerText || headerInfo.textContent || '') : '';
         var im = headerText.match(/(\d{15,19})/);
-        if (im) orderId = im[1];
+        if (im) {
+          orderId = im[1];
+          fallbackUsed = 'header';
+        }
       }
-      if (!orderId || seen[orderId]) continue;
+      // Robust fallback: scan the entire card's text content. The
+      // `.order-item-header-right-info` element occasionally fails the
+      // querySelector even when the order ID renders elsewhere in the card.
+      if (!orderId) {
+        var allCardText = card.innerText || card.textContent || '';
+        var imAll = allCardText.match(/(\d{15,19})/);
+        if (imAll) {
+          orderId = imAll[1];
+          fallbackUsed = 'card-text';
+        }
+      }
+      // The mobile variant of the card is `<a class="order-item order-item-mobile" href="...orderId=...">`
+      // — the card itself IS the link, so `card.querySelector('a[...]')` won't
+      // see its own href. Check the card's own href first.
+      if (!orderId && card.tagName === 'A') {
+        var ownHrefMatch = (card.getAttribute('href') || '')
+          .match(/(?:tradeO|o)rderId=(\d{10,20})/);
+        if (ownHrefMatch) {
+          orderId = ownHrefMatch[1];
+          fallbackUsed = 'self-href';
+        }
+      }
+      // Last-ditch: pull the orderId from any descendant link's href.
+      if (!orderId) {
+        var anyLink = card.querySelector('a[href*="orderId="], a[href*="tradeOrderId="]');
+        if (anyLink) {
+          var hrefMatch = (anyLink.getAttribute('href') || '')
+            .match(/(?:tradeO|o)rderId=(\d{10,20})/);
+          if (hrefMatch) {
+            orderId = hrefMatch[1];
+            fallbackUsed = 'href';
+          }
+        }
+      }
+      if (!orderId) {
+        var rectDbg = {};
+        try {
+          var r = card.getBoundingClientRect();
+          rectDbg = { w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top) };
+        } catch (_) {}
+        skipped.push({
+          idx: i,
+          status: statusDbg,
+          reason: 'no-orderId-anywhere',
+          cardTextLen: (card.innerText || '').length,
+          cardTextContentLen: (card.textContent || '').length,
+          childCount: card.children ? card.children.length : 0,
+          rect: rectDbg,
+          parentClass: (card.parentElement && card.parentElement.className || '').slice(0, 80)
+        });
+        // For the FIRST few skipped cards, dump outerHTML so we can see what's
+        // actually inside them (truncated to 1.5kb each).
+        if (skipped.length <= 2) {
+          var html = (card.outerHTML || '').slice(0, 1500);
+          console.log('[Ali] skipped card[' + i + '] outerHTML(1.5k): ' + html);
+        }
+        continue;
+      }
+      if (seen[orderId]) {
+        skipped.push({ idx: i, status: statusDbg, orderId: orderId, reason: 'duplicate', via: fallbackUsed ? 'header' : 'tradeOrderId' });
+        continue;
+      }
       seen[orderId] = true;
 
       // 2) Product title — `<span title="...">` is the canonical full title.
@@ -520,16 +598,37 @@
       var dm = headerInfoTxt.match(/Order date[:\s]+([^\n]+)/i);
       if (dm) dateText = dm[1].trim();
 
+      // 5) Status text — visible on each card (e.g. "Awaiting delivery",
+      //    "Awaiting shipment", "Awaiting feedback", "Order completed").
+      var statusText = '';
+      var statusEl = card.querySelector('.order-item-header-status-text');
+      if (statusEl) {
+        statusText = (statusEl.innerText || statusEl.textContent || '').trim();
+      }
+
       orders.push({
         orderId: orderId,
         name: (name || '').trim(),
         imageUrl: imageUrl,
         orderStatus: 0,
-        orderDateText: dateText
+        orderDateText: dateText,
+        statusText: statusText
       });
     }
+    var statusBreakdown = {};
+    for (var s = 0; s < orders.length; s++) {
+      var st = (orders[s].statusText || '<empty>').trim();
+      statusBreakdown[st] = (statusBreakdown[st] || 0) + 1;
+    }
     console.log('[Ali] DOM listing extracted ' + orders.length + ' orders ' +
-      '(.order-item nodes=' + cards.length + ')');
+      '(.order-item nodes=' + cards.length + ') ' +
+      'statuses=' + JSON.stringify(statusBreakdown) +
+      ' skipped=' + skipped.length +
+      ' currentUrl=' + (location.href || '').slice(0, 120));
+    if (skipped.length > 0) {
+      console.log('[Ali] DOM listing skipped detail (first 8): ' +
+        JSON.stringify(skipped.slice(0, 8)));
+    }
     return orders;
   }
 
@@ -878,8 +977,10 @@
       });
     }
 
-    // Interleave extract → click → wait → extract. This handles both
-    // append-style and replace-style "View orders" behaviors.
+    // Interleave extract → click → wait → extract. Keeps clicking the
+    // "View more" button until none is left or until maxExpandPasses (safety
+    // cap, ~20). The active tab is narrow ("To ship" / "Shipped") so the
+    // cap should never trigger in practice.
     function expandAndExtract() {
       return new Promise(function (resolve) {
         var clickPasses = 0;
@@ -899,11 +1000,12 @@
         function step() {
           ingestSnapshot();
           if (clickPasses >= CFG.maxExpandPasses) {
-            console.log('[Ali] expand cap reached at pass=' + clickPasses);
+            console.log('[Ali] expand cap reached at pass=' + clickPasses +
+              ' (maxExpandPasses=' + CFG.maxExpandPasses + ')');
             resolve();
             return;
           }
-          // Scroll to bottom — triggers any IntersectionObserver loaders.
+          // Scroll to bottom — also triggers the "view orders" loader to fire.
           try { window.scrollTo(0, document.body.scrollHeight); } catch (_) {}
           var hits = findExpanders();
           if (hits.length === 0) {
@@ -930,20 +1032,29 @@
     }
 
     function startListing() {
-      try { BRIDGE.onProgress('Expanding hidden orders…'); } catch (_) {}
       if (!CFG.domListingEnabled) return fetchNextPage();
-      return expandAndExtract().then(function () {
-        if (all.length > 0) {
-          console.log('[Ali] using DOM listing total=' + all.length);
-          return finishListing();
-        }
-        console.log('[Ali] DOM listing empty — running diagnostic dump');
-        try { dumpPostExpandDomState(); } catch (e) {
-          console.log('[Ali] dumpPostExpandDomState threw: ' + (e && e.message));
-        }
-        console.log('[Ali] falling back to API pagination');
-        return fetchNextPage();
-      });
+      // Click "To ship" → expand & extract; then "Shipped" → expand & extract.
+      // We deliberately skip "Completed" tab — the user doesn't want received
+      // orders imported. seenIds dedupes if an order appears in both tabs.
+      try { BRIDGE.onProgress('Loading "To ship" orders…'); } catch (_) {}
+      return clickTab(isToShipLabel, 'To ship')
+        .then(expandAndExtract)
+        .then(function () {
+          console.log('[Ali] "To ship" done, total=' + all.length);
+          try { BRIDGE.onProgress('Loading "Shipped" orders…'); } catch (_) {}
+          return clickTab(isShippedLabel, 'Shipped');
+        })
+        .then(expandAndExtract)
+        .then(function () {
+          console.log('[Ali] "Shipped" done, total=' + all.length);
+          if (all.length > 0) return finishListing();
+          console.log('[Ali] DOM listing empty — running diagnostic dump');
+          try { dumpPostExpandDomState(); } catch (e) {
+            console.log('[Ali] dumpPostExpandDomState threw: ' + (e && e.message));
+          }
+          console.log('[Ali] falling back to API pagination');
+          return fetchNextPage();
+        });
     }
 
     function finishListing() {
@@ -957,22 +1068,26 @@
         return;
       }
       var o = all[i];
+      var skipTracking = isNotYetShipped(o.statusText) || isReceivedStatus(o.statusText);
       console.log('[Ali] order ' + (i + 1) + '/' + all.length +
         ' id=' + o.orderId + ' name="' + (o.name || '').slice(0, 40) +
-        '" status=' + o.orderStatus);
+        '" cardStatus="' + (o.statusText || '') +
+        '" skipTracking=' + skipTracking);
 
       // Primary path: load /p/tracking/index.html in a hidden iframe and read
-      // the tracking number from `[class*="mailNoValue"]`. The hover popover
-      // and the legacy detail API both no longer expose the tracking number;
-      // they're kept as silent fallbacks only.
-      var trackingPromise = CFG.domTrackingEnabled
-        ? getTrackingViaIframe(o.orderId).then(function (tn) {
-            if (tn) return tn;
-            return fetchDetail(o.orderId)
-              .then(function (res) { return extractTrackingNumber(res, o.orderId); })
-              .catch(function () { return null; });
-          })
-        : Promise.resolve(null);
+      // the tracking number from `[class*="mailNoValue"]`. Skip the lookup for
+      // pre-shipment & post-delivery orders — they don't carry a useful tn.
+      var trackingPromise;
+      if (skipTracking || !CFG.domTrackingEnabled) {
+        trackingPromise = Promise.resolve(null);
+      } else {
+        trackingPromise = getTrackingViaIframe(o.orderId).then(function (tn) {
+          if (tn) return tn;
+          return fetchDetail(o.orderId)
+            .then(function (res) { return extractTrackingNumber(res, o.orderId); })
+            .catch(function () { return null; });
+        });
+      }
 
       return trackingPromise.catch(function (err) {
         console.log('[Ali] tracking lookup error order=' + o.orderId + ' err=' +
@@ -984,7 +1099,8 @@
           name: o.name,
           imageUrl: o.imageUrl || null,
           trackingNumber: tn,
-          orderCreatedAt: parseOrderDate(o.orderDateText)
+          orderCreatedAt: parseOrderDate(o.orderDateText),
+          statusText: o.statusText || ''
         };
         try { BRIDGE.onOrder(JSON.stringify(payload), i + 1, all.length); } catch (_) {}
         return sleep(CFG.detailFetchDelayMs).then(function () { return processNext(i + 1); });
