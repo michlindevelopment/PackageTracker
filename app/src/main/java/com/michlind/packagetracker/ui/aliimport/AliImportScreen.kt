@@ -164,7 +164,11 @@ fun AliImportScreen(
                 onStart = {
                     viewModel.beginImport()
                     val js = runCatching {
-                        context.assets.open("ali_import.js").bufferedReader().use { it.readText() }
+                        val cfg = context.assets.open("ali_import_config.js")
+                            .bufferedReader().use { it.readText() }
+                        val main = context.assets.open("ali_import.js")
+                            .bufferedReader().use { it.readText() }
+                        cfg + "\n" + main
                     }.getOrNull()
                     if (js != null) {
                         webViewRef.value?.evaluateJavascript(js, null)
