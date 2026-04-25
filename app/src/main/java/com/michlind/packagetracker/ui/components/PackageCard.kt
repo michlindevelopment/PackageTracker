@@ -1,7 +1,8 @@
 package com.michlind.packagetracker.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,11 +37,13 @@ import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.util.DateUtils
 import androidx.compose.material3.Icon
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PackageCard(
     pkg: TrackedPackage,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
 ) {
     val (statusColor, _) = pkg.status.colorAndIcon()
     val gradient = Brush.linearGradient(
@@ -58,7 +61,7 @@ fun PackageCard(
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .background(gradient)
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),

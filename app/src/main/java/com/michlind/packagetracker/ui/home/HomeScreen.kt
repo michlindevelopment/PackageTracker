@@ -1,6 +1,8 @@
 package com.michlind.packagetracker.ui.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,10 +18,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -37,22 +40,18 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,9 +99,9 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    // Default to "In Transit" (tab 1) on cold start; rememberSaveable preserves
-    // the user's choice when navigating to Detail and back.
-    var selectedTab by rememberSaveable { mutableIntStateOf(1) }
+    // Default to "In Transit" (page 1) on cold start; rememberPagerState
+    // is rememberSaveable internally so it survives Detail navigation.
+    val pagerState = rememberPagerState(initialPage = 1) { 3 }
 
     // Confirmation dialog state
     var pendingDeleteGroup by remember { mutableStateOf<PackageGroup?>(null) }
@@ -119,7 +118,7 @@ fun HomeScreen(
     // In Transit tab and refresh tracking statuses for the newly-imported items.
     LaunchedEffect(refreshAndShowInTransit) {
         if (refreshAndShowInTransit) {
-            selectedTab = 1
+            pagerState.animateScrollToPage(1)
             viewModel.refreshAll()
             onRefreshConsumed()
         }
@@ -206,34 +205,51 @@ fun HomeScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
-            TabRow(selectedTabIndex = selectedTab) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text(stringResource(R.string.tab_not_yet_sent)) })
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text(stringResource(R.string.tab_in_transit)) })
-                Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text(stringResource(R.string.tab_received)) })
+            PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
+                Tab(
+                    selected = pagerState.currentPage == 0,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
+                    text = { Text(stringResource(R.string.tab_not_yet_sent)) }
+                )
+                Tab(
+                    selected = pagerState.currentPage == 1,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
+                    text = { Text(stringResource(R.string.tab_in_transit)) }
+                )
+                Tab(
+                    selected = pagerState.currentPage == 2,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
+                    text = { Text(stringResource(R.string.tab_received)) }
+                )
             }
 
-            when (selectedTab) {
-                0 -> NotYetSentList(
-                    packages = notYetSent,
-                    onPackageClick = onPackageClick,
-                    onDeleteRequested = { pendingDeletePkg = it }
-                )
-                1 -> GroupList(
-                    groups = activeGroups,
-                    emptyIcon = R.drawable.ic_empty_transit,
-                    emptyTitle = stringResource(R.string.empty_in_transit),
-                    emptySubtitle = stringResource(R.string.empty_in_transit_sub),
-                    onPackageClick = onPackageClick,
-                    onDeleteRequested = { pendingDeleteGroup = it }
-                )
-                2 -> GroupList(
-                    groups = receivedGroups,
-                    emptyIcon = R.drawable.ic_empty_received,
-                    emptyTitle = stringResource(R.string.empty_received),
-                    emptySubtitle = stringResource(R.string.empty_received_sub),
-                    onPackageClick = onPackageClick,
-                    onDeleteRequested = { pendingDeleteGroup = it }
-                )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                when (page) {
+                    0 -> NotYetSentList(
+                        packages = notYetSent,
+                        onPackageClick = onPackageClick,
+                        onDeleteRequested = { pendingDeletePkg = it }
+                    )
+                    1 -> GroupList(
+                        groups = activeGroups,
+                        emptyIcon = R.drawable.ic_empty_transit,
+                        emptyTitle = stringResource(R.string.empty_in_transit),
+                        emptySubtitle = stringResource(R.string.empty_in_transit_sub),
+                        onPackageClick = onPackageClick,
+                        onDeleteRequested = { pendingDeleteGroup = it }
+                    )
+                    2 -> GroupList(
+                        groups = receivedGroups,
+                        emptyIcon = R.drawable.ic_empty_received,
+                        emptyTitle = stringResource(R.string.empty_received),
+                        emptySubtitle = stringResource(R.string.empty_received_sub),
+                        onPackageClick = onPackageClick,
+                        onDeleteRequested = { pendingDeleteGroup = it }
+                    )
+                }
             }
         }
     }
@@ -256,11 +272,14 @@ private fun GroupList(
             contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)
         ) {
             items(groups, key = { it.trackingNumber }) { group ->
-                SwipeToDismissGroupItem(
+                PackageGroupCard(
                     group = group,
                     onPackageClick = onPackageClick,
-                    onDeleteRequested = onDeleteRequested,
-                    modifier = Modifier.animateItem()
+                    onLongClick = { onDeleteRequested(group) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .animateItem()
                 )
             }
         }
@@ -285,127 +304,33 @@ private fun NotYetSentList(
             contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)
         ) {
             items(packages, key = { it.id }) { pkg ->
-                SwipeToDismissPackageItem(
+                PackageCard(
                     pkg = pkg,
-                    onPackageClick = onPackageClick,
-                    onDeleteRequested = onDeleteRequested,
-                    modifier = Modifier.animateItem()
+                    onClick = { onPackageClick(pkg.id) },
+                    onLongClick = { onDeleteRequested(pkg) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .animateItem()
                 )
             }
         }
     }
 }
 
-// Bug 2 fix: wrapContentHeight prevents vertical drag; Bug 3 fix: confirmValueChange returns false,
-// dialog shown in parent instead of deleting immediately.
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SwipeToDismissGroupItem(
-    group: PackageGroup,
-    onPackageClick: (Long) -> Unit,
-    onDeleteRequested: (PackageGroup) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onDeleteRequested(group)
-            }
-            false // always snap back — dialog handles the actual deletion
-        }
-    )
-
-    SwipeToDismissBox(
-        state = dismissState,
-        modifier = modifier.fillMaxWidth(),
-        enableDismissFromStartToEnd = false,
-        enableDismissFromEndToStart = true,
-        backgroundContent = {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(16.dp)),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = stringResource(R.string.delete),
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.padding(end = 20.dp)
-                )
-            }
-        }
-    ) {
-        PackageGroupCard(
-            group = group,
-            onPackageClick = onPackageClick,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp)
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SwipeToDismissPackageItem(
-    pkg: TrackedPackage,
-    onPackageClick: (Long) -> Unit,
-    onDeleteRequested: (TrackedPackage) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onDeleteRequested(pkg)
-            }
-            false
-        }
-    )
-
-    SwipeToDismissBox(
-        state = dismissState,
-        modifier = modifier.fillMaxWidth(),
-        enableDismissFromStartToEnd = false,
-        enableDismissFromEndToStart = true,
-        backgroundContent = {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(16.dp)),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = stringResource(R.string.delete),
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.padding(end = 20.dp)
-                )
-            }
-        }
-    ) {
-        PackageCard(
-            pkg = pkg,
-            onClick = { onPackageClick(pkg.id) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp)
-        )
-    }
-}
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PackageGroupCard(
     group: PackageGroup,
     onPackageClick: (Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null
 ) {
     if (!group.isMultiple) {
         PackageCard(
             pkg = group.packages.first(),
             onClick = { onPackageClick(group.packages.first().id) },
+            onLongClick = onLongClick,
             modifier = modifier
         )
         return
@@ -430,13 +355,21 @@ fun PackageGroupCard(
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .background(gradient)
+            // Long-press anywhere on the card outside a sub-row deletes the
+            // whole group; sub-rows have their own .clickable for tapping into
+            // an individual package.
+            .combinedClickable(
+                onClick = { onPackageClick(first.id) },
+                onLongClick = onLongClick
+            )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Header — mirrors PackageCard layout, clickable opens first package
+            // Header — mirrors PackageCard layout. The outer combinedClickable
+            // already handles tap → first package, so the header itself
+            // doesn't need an extra clickable.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onPackageClick(first.id) }
                     .padding(16.dp),
                 verticalAlignment = Alignment.Top
             ) {
