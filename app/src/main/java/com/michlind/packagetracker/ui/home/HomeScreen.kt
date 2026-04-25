@@ -397,8 +397,8 @@ fun PackageGroupCard(
     val (statusColor, _) = group.status.colorAndIcon()
     val gradient = Brush.linearGradient(
         colors = listOf(
-            statusColor.copy(alpha = 0.10f),
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.0f)
+            statusColor.copy(alpha = 0.18f),
+            statusColor.copy(alpha = 0.04f)
         ),
         start = Offset(0f, 0f),
         end = Offset(600f, 300f)
@@ -406,9 +406,9 @@ fun PackageGroupCard(
 
     Box(
         modifier = modifier
-            .shadow(elevation = 3.dp, shape = RoundedCornerShape(16.dp), clip = false)
+            .shadow(elevation = 4.dp, shape = RoundedCornerShape(16.dp), clip = false)
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .background(gradient)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -424,7 +424,7 @@ fun PackageGroupCard(
                     modifier = Modifier
                         .size(68.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(statusColor.copy(alpha = 0.12f)),
+                        .background(statusColor.copy(alpha = 0.22f)),
                     contentAlignment = Alignment.Center
                 ) {
                     // Multi-item header always shows the package icon, never a photo —
@@ -558,5 +558,49 @@ private fun SubPackageRow(pkg: TrackedPackage, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
+    }
+}
+
+@androidx.compose.ui.tooling.preview.PreviewLightDark
+@Composable
+private fun PackageGroupCardPreview() {
+    com.michlind.packagetracker.ui.theme.PackageTrackerTheme(dynamicColor = false) {
+        Column(
+            modifier = Modifier
+                .background(MaterialTheme.colorScheme.background)
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            val pkgs = listOf(
+                com.michlind.packagetracker.ui.preview.samplePackage(
+                    id = 1,
+                    name = "Headphones",
+                    trackingNumber = "CNG00811858377424",
+                    status = com.michlind.packagetracker.domain.model.PackageStatus.IN_TRANSIT
+                ),
+                com.michlind.packagetracker.ui.preview.samplePackage(
+                    id = 2,
+                    name = "Charging cable",
+                    trackingNumber = "CNG00811858377424",
+                    status = com.michlind.packagetracker.domain.model.PackageStatus.IN_TRANSIT
+                ),
+                com.michlind.packagetracker.ui.preview.samplePackage(
+                    id = 3,
+                    name = "Phone case",
+                    trackingNumber = "CNG00811858377424",
+                    status = com.michlind.packagetracker.domain.model.PackageStatus.IN_TRANSIT
+                )
+            )
+            PackageGroupCard(
+                group = PackageGroup(
+                    trackingNumber = pkgs.first().trackingNumber,
+                    packages = pkgs,
+                    status = pkgs.first().status,
+                    lastUpdated = pkgs.maxOf { it.lastUpdated }
+                ),
+                onPackageClick = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 }

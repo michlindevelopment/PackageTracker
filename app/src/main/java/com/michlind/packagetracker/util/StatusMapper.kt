@@ -23,6 +23,7 @@ object StatusMapper {
             status.contains("CUSTOMS") -> PackageStatus.CUSTOMS
             status.contains("DEPARTURE") || status == "IN_TRANSIT" -> PackageStatus.IN_TRANSIT
             status.contains("ACCEPT") || status.contains("GTMS") -> PackageStatus.SHIPPED
+            status == "SELLER_PREPARING" || status == "PENDING_PICKUP" -> PackageStatus.ORDER_PLACED
             status.contains("FAILED") || status.contains("RETURN") || status.contains("LOST") || status.contains("EXCEPTION") -> PackageStatus.EXCEPTION
             else -> PackageStatus.UNKNOWN
         }
