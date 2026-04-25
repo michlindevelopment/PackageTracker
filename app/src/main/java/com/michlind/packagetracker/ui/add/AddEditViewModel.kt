@@ -97,7 +97,7 @@ class AddEditViewModel @Inject constructor(
             val result = _trackingResult.value
             val now = System.currentTimeMillis()
             val existing = existingPackage
-            val wasNotYetSent = existing?.status == PackageStatus.NOT_YET_SENT
+            existing?.status == PackageStatus.NOT_YET_SENT
             val hasTrackingNumber = tn.isNotBlank()
 
             // Determine status: prefer fresh tracking result, then preserve existing, fall back

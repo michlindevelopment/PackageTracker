@@ -155,11 +155,11 @@ fun PackageCard(
 @Composable
 private fun PackageCardPreview() {
     com.michlind.packagetracker.ui.theme.PackageTrackerTheme(dynamicColor = false) {
-        androidx.compose.foundation.layout.Column(
+        Column(
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.background)
                 .padding(12.dp),
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             PackageCard(
                 pkg = com.michlind.packagetracker.ui.preview.samplePackage(

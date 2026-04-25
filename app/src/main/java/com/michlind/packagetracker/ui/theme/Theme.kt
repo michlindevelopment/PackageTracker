@@ -21,7 +21,7 @@ private val DarkColorScheme = darkColorScheme(
 
 private val LightColorScheme = lightColorScheme(
     primary = BrandIndigo,
-    onPrimary = androidx.compose.ui.graphics.Color.White,
+    onPrimary = Color.White,
     primaryContainer = Color(0xFFEDE9FE),
     onPrimaryContainer = BrandIndigoDark,
     secondary = BrandViolet,
