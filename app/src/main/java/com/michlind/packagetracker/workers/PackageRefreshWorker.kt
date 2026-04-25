@@ -38,7 +38,8 @@ class PackageRefreshWorker @AssistedInject constructor(
                                 context = applicationContext,
                                 packageId = pkg.id,
                                 packageName = pkg.name.ifBlank { pkg.trackingNumber },
-                                newStatus = updated?.status?.displayName ?: "Updated"
+                                newStatus = updated?.status?.displayName ?: "Updated",
+                                photoUri = updated?.photoUri ?: pkg.photoUri
                             )
                         }
                     }
@@ -58,13 +59,16 @@ class PackageRefreshWorker @AssistedInject constructor(
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
-            val request = PeriodicWorkRequestBuilder<PackageRefreshWorker>(6, TimeUnit.HOURS)
+            val request = PeriodicWorkRequestBuilder<PackageRefreshWorker>(1, TimeUnit.HOURS)
                 .setConstraints(constraints)
                 .build()
 
+            // UPDATE policy so changes to the interval propagate to installs
+            // that already have the previous schedule registered (KEEP would
+            // silently retain the old interval).
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 request
             )
         }
