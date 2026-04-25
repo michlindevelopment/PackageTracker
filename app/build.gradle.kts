@@ -21,12 +21,17 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // TODO: replace with a real release keystore before publishing.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
