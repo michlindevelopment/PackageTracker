@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -85,6 +86,7 @@ fun HomeScreen(
     onPackageClick: (Long) -> Unit,
     onAddClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onImportFromAliExpress: () -> Unit,
     refreshAndShowInTransit: Boolean = false,
     onRefreshConsumed: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
@@ -180,6 +182,12 @@ fun HomeScreen(
                         } else {
                             Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
                         }
+                    }
+                    IconButton(onClick = onImportFromAliExpress) {
+                        Icon(
+                            Icons.Default.ShoppingCart,
+                            contentDescription = "Import from AliExpress"
+                        )
                     }
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")

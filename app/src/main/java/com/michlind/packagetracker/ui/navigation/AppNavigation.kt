@@ -75,6 +75,9 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
                 },
+                onImportFromAliExpress = {
+                    navController.navigate(Screen.AliImport.route)
+                },
                 refreshAndShowInTransit = refreshSignal,
                 onRefreshConsumed = {
                     backStackEntry.savedStateHandle["aliImportDone"] = false
@@ -84,8 +87,7 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onBack = { navController.popBackStack() },
-                onImportFromAliExpress = { navController.navigate(Screen.AliImport.route) }
+                onBack = { navController.popBackStack() }
             )
         }
 

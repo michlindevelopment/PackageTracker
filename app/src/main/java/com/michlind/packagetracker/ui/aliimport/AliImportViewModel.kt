@@ -19,6 +19,10 @@ import javax.inject.Inject
 
 sealed interface AliImportState {
     data object Idle : AliImportState
+    // After login is detected (sign=y cookie) but before the orders page has
+    // finished loading. Used to show the overlay during the post-login
+    // bounce — there's no user input needed here, just waiting.
+    data object Authenticating : AliImportState
     data object ReadyToImport : AliImportState
     data class Importing(
         val statusText: String,
@@ -60,8 +64,24 @@ class AliImportViewModel @Inject constructor(
     }
 
     fun onOrdersPageLoaded() {
-        if (_state.value is AliImportState.Idle) {
+        val s = _state.value
+        if (s is AliImportState.Idle || s is AliImportState.Authenticating) {
             _state.value = AliImportState.ReadyToImport
+        }
+    }
+
+    fun onAuthenticated() {
+        if (_state.value is AliImportState.Idle) {
+            _state.value = AliImportState.Authenticating
+        }
+    }
+
+    // Session cookie can expire — if AliExpress redirects back to login while
+    // we already moved to Authenticating, drop back to Idle so the overlay
+    // gets out of the way and the user can re-enter credentials.
+    fun onLoginPageShown() {
+        if (_state.value is AliImportState.Authenticating) {
+            _state.value = AliImportState.Idle
         }
     }
 
