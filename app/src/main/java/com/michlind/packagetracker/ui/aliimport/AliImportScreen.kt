@@ -342,7 +342,7 @@ private fun ActionButton(
 private fun CountersRow(added: Int, upgraded: Int, skipped: Int, failed: Int) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
     ) {
         Counter("Added", added, MaterialTheme.colorScheme.primary)
         Counter("Upgraded", upgraded, MaterialTheme.colorScheme.tertiary)
