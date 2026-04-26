@@ -3,9 +3,13 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- BG: pink for debug, yellow for prod -->
     <path
         android:pathData="M0,0h108v108h-108z"
-        android:fillColor="#FFC107"/>
+        android:fillColor="#E91E63"/>
+
+    <!-- box -->
     <path
         android:pathData="M32,43l22,-11l22,11l0,24l-22,11l-22,-11z"
         android:fillColor="#F5F5F0"/>
@@ -14,12 +18,12 @@
         android:strokeLineJoin="round"
         android:strokeWidth="2"
         android:fillColor="#00000000"
-        android:strokeColor="#FFC107"
+        android:strokeColor="#E91E63"
         android:strokeLineCap="round"/>
     <path
-        android:fillColor="#FF000000"
         android:pathData="M54,53L54,78"
         android:strokeWidth="2"
-        android:strokeColor="#FFC107"
+        android:fillColor="#00000000"
+        android:strokeColor="#E91E63"
         android:strokeLineCap="round"/>
 </vector>

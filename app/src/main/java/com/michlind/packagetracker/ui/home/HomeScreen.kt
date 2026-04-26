@@ -447,11 +447,13 @@ fun PackageGroupCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = DateUtils.relativeTime(first.lastUpdated),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-                        )
+                        DateUtils.relativeTime(first.lastUpdated)?.let { updated ->
+                            Text(
+                                text = updated,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                            )
+                        } ?: Spacer(Modifier.width(0.dp))
                         first.daysInTransit?.let { days ->
                             Text(
                                 text = days,

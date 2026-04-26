@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Package Tracker</string>
+    <string name="app_name">AliTrack</string>
     <string name="tab_in_transit">In Transit</string>
     <string name="tab_received">Received</string>
     <string name="tab_not_yet_sent">Not Yet Sent</string>

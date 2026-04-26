@@ -166,11 +166,13 @@ fun PackageCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        text = DateUtils.relativeTime(pkg.lastUpdated),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-                    )
+                    DateUtils.relativeTime(pkg.lastUpdated)?.let { updated ->
+                        Text(
+                            text = updated,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                        )
+                    } ?: Spacer(Modifier.width(0.dp))
                     pkg.daysInTransit?.let { days ->
                         Text(
                             text = days,

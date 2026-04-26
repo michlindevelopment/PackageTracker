@@ -20,6 +20,15 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("H:/My Drive/Android Dev Backups/Keys/MdEvKey.jks")
+            storePassword = "***REMOVED***"
+            keyAlias = "PackageTracker"
+            keyPassword = "***REMOVED***"
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -30,8 +39,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // TODO: replace with a real release keystore before publishing.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -122,4 +130,25 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+// Build a signed release APK and upload it to GitHub Releases via the gh CLI.
+// Prereqs (one-time): install gh, then run `gh auth login` once.
+// Usage: ./gradlew publishRelease
+val publishRelease by tasks.registering(Exec::class) {
+    group = "publishing"
+    description = "Builds the release APK and creates a GitHub Release with it attached."
+    dependsOn("assembleRelease")
+
+    val versionName = android.defaultConfig.versionName ?: "0.0"
+    val tag = "v$versionName"
+    val apk = layout.buildDirectory.file("outputs/apk/release/app-release.apk")
+
+    workingDir = rootDir
+    commandLine(
+        "gh", "release", "create", tag,
+        apk.get().asFile.absolutePath,
+        "--title", tag,
+        "--generate-notes"
+    )
 }

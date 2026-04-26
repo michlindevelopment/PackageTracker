@@ -7,7 +7,8 @@ import java.util.concurrent.TimeUnit
 
 object DateUtils {
 
-    fun relativeTime(epochMs: Long): String {
+    fun relativeTime(epochMs: Long): String? {
+        if (epochMs <= 0L) return null
         val now = System.currentTimeMillis()
         val diff = now - epochMs
         return when {
