@@ -127,6 +127,10 @@ class PackageRepositoryImpl @Inject constructor(
             val firstEvent = tracking.events.firstOrNull()
             existingRows.associate { existing ->
                 val statusChanged = existing.status != tracking.status.name
+                // Once Cainiao reports DELIVERED, automatically promote the
+                // package to "received" so it leaves the active list — saves
+                // the user from manually flipping the toggle on every parcel.
+                val nowDelivered = tracking.status == PackageStatus.DELIVERED
                 val updated = existing.copy(
                     status = tracking.status.name,
                     statusDescription = tracking.statusDescription,
@@ -137,7 +141,8 @@ class PackageRepositoryImpl @Inject constructor(
                     estimatedDeliveryTime = tracking.estimatedDeliveryTime,
                     daysInTransit = tracking.daysInTransit,
                     originCountry = tracking.originCountry,
-                    destCountry = tracking.destCountry
+                    destCountry = tracking.destCountry,
+                    isReceived = existing.isReceived || nowDelivered
                 )
                 dao.update(updated)
                 existing.id to statusChanged

@@ -3,6 +3,15 @@ package com.michlind.packagetracker.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.RichTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,7 +46,7 @@ import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.util.DateUtils
 import androidx.compose.material3.Icon
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun PackageCard(
     pkg: TrackedPackage,
@@ -45,6 +54,8 @@ fun PackageCard(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null
 ) {
+    val nameTooltipState = rememberTooltipState(isPersistent = true)
+    val tooltipScope = rememberCoroutineScope()
     val (statusColor, _) = pkg.status.colorAndIcon()
     val gradient = Brush.linearGradient(
         colors = listOf(
@@ -108,8 +119,31 @@ fun PackageCard(
                         ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    if (pkg.name.isNotBlank()) {
+                        TooltipBox(
+                            positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
+                            tooltip = {
+                                RichTooltip(title = { Text("Item name") }) {
+                                    Text(pkg.name)
+                                }
+                            },
+                            state = nameTooltipState
+                        ) {
+                            IconButton(
+                                onClick = { tooltipScope.launch { nameTooltipState.show() } },
+                                modifier = Modifier.size(22.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Info,
+                                    contentDescription = "Show full item name",
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
                     Spacer(Modifier.width(8.dp))
                     StatusBadge(status = pkg.status)
                 }

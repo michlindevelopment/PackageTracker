@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -37,10 +38,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,9 +64,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 import com.michlind.packagetracker.R
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
@@ -191,6 +198,7 @@ fun DetailScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DetailContent(
     pkg: TrackedPackage,
@@ -199,6 +207,8 @@ private fun DetailContent(
     onToggleReceived: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val nameTooltipState = rememberTooltipState(isPersistent = true)
+    val tooltipScope = rememberCoroutineScope()
 
     LazyColumn(
         modifier = Modifier
@@ -258,6 +268,30 @@ private fun DetailContent(
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             color = color
                         )
+                        if (pkg.name.isNotBlank()) {
+                            Spacer(Modifier.width(6.dp))
+                            TooltipBox(
+                                positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
+                                tooltip = {
+                                    RichTooltip(title = { Text("Item name") }) {
+                                        Text(pkg.name)
+                                    }
+                                },
+                                state = nameTooltipState
+                            ) {
+                                IconButton(
+                                    onClick = { tooltipScope.launch { nameTooltipState.show() } },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Info,
+                                        contentDescription = "Show full item name",
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                     if (pkg.statusDescription.isNotBlank()) {
                         Text(
