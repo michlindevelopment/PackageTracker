@@ -1,9 +1,23 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
+
+val signingProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val signingStoreFile: String? = signingProps.getProperty("signing.storeFile")
+val signingStorePassword: String? = signingProps.getProperty("signing.storePassword")
+val signingKeyAlias: String? = signingProps.getProperty("signing.keyAlias")
+val signingKeyPassword: String? = signingProps.getProperty("signing.keyPassword")
+val hasReleaseSigning = listOf(
+    signingStoreFile, signingStorePassword, signingKeyAlias, signingKeyPassword
+).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.michlind.packagetracker"
@@ -21,11 +35,13 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = file("H:/My Drive/Android Dev Backups/Keys/MdEvKey.jks")
-            storePassword = "***REMOVED***"
-            keyAlias = "PackageTracker"
-            keyPassword = "***REMOVED***"
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(signingStoreFile!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+            }
         }
     }
 
@@ -39,7 +55,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
     compileOptions {
