@@ -19,6 +19,30 @@ val hasReleaseSigning = listOf(
     signingStoreFile, signingStorePassword, signingKeyAlias, signingKeyPassword
 ).all { !it.isNullOrBlank() }
 
+// Version is stored in version.properties (committed). The patch number
+// auto-bumps whenever `publishRelease` is invoked; major/minor are edited
+// by hand. versionCode is derived as major*10000 + minor*100 + patch so
+// 1.0.10 (10010) > 1.0.9 (10009) and 1.1.0 (10100) > 1.0.99 (10099).
+val versionPropsFile = rootProject.file("version.properties")
+val versionProps = Properties().apply {
+    if (versionPropsFile.exists()) versionPropsFile.inputStream().use { load(it) }
+}
+val versionMajor = versionProps.getProperty("version.major", "1").toInt()
+val versionMinor = versionProps.getProperty("version.minor", "0").toInt()
+var versionPatch = versionProps.getProperty("version.patch", "0").toInt()
+
+val isPublishing = gradle.startParameter.taskNames.any {
+    it == "publishRelease" || it.endsWith(":publishRelease")
+}
+if (isPublishing) {
+    versionPatch += 1
+    versionProps.setProperty("version.patch", versionPatch.toString())
+    versionPropsFile.outputStream().use { versionProps.store(it, "Version — patch auto-bumped by publishRelease") }
+}
+
+val computedVersionName = "$versionMajor.$versionMinor.$versionPatch"
+val computedVersionCode = versionMajor * 10000 + versionMinor * 100 + versionPatch
+
 android {
     namespace = "com.michlind.packagetracker"
     compileSdk = 36
@@ -27,8 +51,8 @@ android {
         applicationId = "com.michlind.packagetracker"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = computedVersionCode
+        versionName = computedVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
