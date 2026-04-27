@@ -1,6 +1,7 @@
 package com.michlind.packagetracker
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -12,9 +13,12 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
@@ -48,6 +52,20 @@ class MainActivity : ComponentActivity() {
                 ThemePreference.DARK -> true
             }
             PackageTrackerTheme(darkTheme = isDark) {
+                // Keep the system status / navigation bar icon colors in sync
+                // with the app theme — otherwise white icons disappear on a
+                // light app background and dark icons disappear on a dark one.
+                val view = LocalView.current
+                if (!view.isInEditMode) {
+                    SideEffect {
+                        val window = (view.context as Activity).window
+                        WindowCompat.getInsetsController(window, view).apply {
+                            isAppearanceLightStatusBars = !isDark
+                            isAppearanceLightNavigationBars = !isDark
+                        }
+                    }
+                }
+
                 // Android 13+ requires runtime permission for notifications.
                 // Prompt once at first launch — if the user denies, the system
                 // won't prompt again automatically (they'd have to toggle it
