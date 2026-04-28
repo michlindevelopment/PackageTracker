@@ -108,6 +108,12 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { markAsReceived(id, isReceived) }
     }
 
+    fun toggleGroupReceived(group: PackageGroup, isReceived: Boolean) {
+        viewModelScope.launch {
+            group.packages.forEach { markAsReceived(it.id, isReceived) }
+        }
+    }
+
     fun refreshAll() {
         viewModelScope.launch {
             _isRefreshing.value = true

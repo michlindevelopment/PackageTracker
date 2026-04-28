@@ -30,6 +30,17 @@ import com.michlind.packagetracker.ui.theme.PackageTrackerTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+//TODO
+/*
+* Better UI order
+* Hide tamir in settings
+* Setter login screen
+* Improve understanding for ali import (main screen plus) and text
+* Long click delete mark as received
+* Bug - package both in no yet sent and delivered
+*
+* */
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 

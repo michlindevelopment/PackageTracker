@@ -17,7 +17,7 @@ interface PackageDao {
     @Query("SELECT * FROM packages WHERE isReceived = 1 ORDER BY lastUpdated DESC")
     fun getReceivedPackages(): Flow<List<PackageEntity>>
 
-    @Query("SELECT * FROM packages WHERE status = 'NOT_YET_SENT' ORDER BY createdAt DESC")
+    @Query("SELECT * FROM packages WHERE status = 'NOT_YET_SENT' AND isReceived = 0 ORDER BY createdAt DESC")
     fun getNotYetSentPackages(): Flow<List<PackageEntity>>
 
     @Query("SELECT * FROM packages WHERE id = :id")

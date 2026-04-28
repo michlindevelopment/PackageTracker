@@ -13,11 +13,17 @@
     <string name="track_button">Track</string>
     <string name="save_button">Save</string>
     <string name="cancel">Cancel</string>
+    <string name="confirm">Confirm</string>
     <string name="delete">Delete</string>
     <string name="confirm_delete_title">Delete Package?</string>
     <string name="confirm_delete_message">This will permanently remove the package from your list.</string>
     <string name="mark_as_received">Mark as Received</string>
+    <string name="mark_as_not_received">Mark as Not Received</string>
     <string name="mark_as_in_transit">Mark as In Transit</string>
+    <string name="confirm_mark_received_title">Mark as Received?</string>
+    <string name="confirm_mark_received_message">This will move the package to the Received tab.</string>
+    <string name="confirm_mark_not_received_title">Mark as Not Received?</string>
+    <string name="confirm_mark_not_received_message">This will move the package back out of the Received tab.</string>
     <string name="empty_in_transit">No packages in transit</string>
     <string name="empty_in_transit_sub">Add a tracking number to start tracking</string>
     <string name="empty_received">No received packages</string>

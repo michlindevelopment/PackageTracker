@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -108,9 +110,16 @@ fun HomeScreen(
     // is rememberSaveable internally so it survives Detail navigation.
     val pagerState = rememberPagerState(initialPage = 1) { 3 }
 
-    // Confirmation dialog state
+    // Long-press action menu state — single source of truth for both groups and standalone packages
+    var actionMenuGroup by remember { mutableStateOf<PackageGroup?>(null) }
+    var actionMenuPkg by remember { mutableStateOf<TrackedPackage?>(null) }
+    // Delete-confirmation state, shown only after the user picks "Delete" from the menu
     var pendingDeleteGroup by remember { mutableStateOf<PackageGroup?>(null) }
     var pendingDeletePkg by remember { mutableStateOf<TrackedPackage?>(null) }
+    // Mark-received-confirmation state, shown only after the user picks the toggle option
+    var pendingToggleGroup by remember { mutableStateOf<PackageGroup?>(null) }
+    var pendingTogglePkg by remember { mutableStateOf<TrackedPackage?>(null) }
+    var pendingToggleTarget by remember { mutableStateOf(false) }
 
     LaunchedEffect(errorMessage) {
         if (errorMessage != null) {
@@ -127,6 +136,103 @@ fun HomeScreen(
             viewModel.refreshAll()
             onRefreshConsumed()
         }
+    }
+
+    // Action menu — appears on long-press; lets the user choose Delete or toggle received
+    if (actionMenuGroup != null || actionMenuPkg != null) {
+        val isReceived = actionMenuGroup?.packages?.all { it.isReceived }
+            ?: actionMenuPkg?.isReceived
+            ?: false
+        val toggleLabel = if (isReceived)
+            stringResource(R.string.mark_as_not_received)
+        else
+            stringResource(R.string.mark_as_received)
+        val menuTitle = actionMenuGroup?.displayName
+            ?: actionMenuPkg?.name?.ifBlank { null }
+            ?: actionMenuPkg?.trackingNumber?.ifBlank { null }
+            ?: stringResource(R.string.add_package)
+        AlertDialog(
+            onDismissRequest = { actionMenuGroup = null; actionMenuPkg = null },
+            title = {
+                Text(
+                    menuTitle,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleSmall
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            val group = actionMenuGroup
+                            val pkg = actionMenuPkg
+                            actionMenuGroup = null
+                            actionMenuPkg = null
+                            pendingToggleTarget = !isReceived
+                            if (group != null) pendingToggleGroup = group
+                            else pkg?.let { pendingTogglePkg = it }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(toggleLabel)
+                    }
+                    Button(
+                        onClick = {
+                            val group = actionMenuGroup
+                            val pkg = actionMenuPkg
+                            actionMenuGroup = null
+                            actionMenuPkg = null
+                            if (group != null) pendingDeleteGroup = group
+                            else pkg?.let { pendingDeletePkg = it }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        )
+                    ) {
+                        Text(stringResource(R.string.delete))
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    // Mark-received confirmation dialog — second step after picking the toggle from the action menu
+    if (pendingToggleGroup != null || pendingTogglePkg != null) {
+        val newState = pendingToggleTarget
+        val titleRes = if (newState) R.string.confirm_mark_received_title
+                       else R.string.confirm_mark_not_received_title
+        val msgRes = if (newState) R.string.confirm_mark_received_message
+                     else R.string.confirm_mark_not_received_message
+        AlertDialog(
+            onDismissRequest = { pendingToggleGroup = null; pendingTogglePkg = null },
+            title = { Text(stringResource(titleRes)) },
+            text = { Text(stringResource(msgRes)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    val group = pendingToggleGroup
+                    val pkg = pendingTogglePkg
+                    pendingToggleGroup = null
+                    pendingTogglePkg = null
+                    if (group != null) viewModel.toggleGroupReceived(group, newState)
+                    else pkg?.let { viewModel.toggleReceived(it.id, newState) }
+                }) {
+                    Text(stringResource(R.string.confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    pendingToggleGroup = null
+                    pendingTogglePkg = null
+                }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
     }
 
     if (pendingDeleteGroup != null || pendingDeletePkg != null) {
@@ -236,7 +342,7 @@ fun HomeScreen(
                     0 -> NotYetSentList(
                         packages = notYetSent,
                         onPackageClick = onPackageClick,
-                        onDeleteRequested = { pendingDeletePkg = it }
+                        onLongPress = { actionMenuPkg = it }
                     )
                     1 -> GroupList(
                         groups = activeGroups,
@@ -244,7 +350,7 @@ fun HomeScreen(
                         emptyTitle = stringResource(R.string.empty_in_transit),
                         emptySubtitle = stringResource(R.string.empty_in_transit_sub),
                         onPackageClick = onPackageClick,
-                        onDeleteRequested = { pendingDeleteGroup = it }
+                        onLongPress = { actionMenuGroup = it }
                     )
                     2 -> GroupList(
                         groups = receivedGroups,
@@ -252,7 +358,7 @@ fun HomeScreen(
                         emptyTitle = stringResource(R.string.empty_received),
                         emptySubtitle = stringResource(R.string.empty_received_sub),
                         onPackageClick = onPackageClick,
-                        onDeleteRequested = { pendingDeleteGroup = it }
+                        onLongPress = { actionMenuGroup = it }
                     )
                 }
             }
@@ -267,7 +373,7 @@ private fun GroupList(
     emptyTitle: String,
     emptySubtitle: String,
     onPackageClick: (Long) -> Unit,
-    onDeleteRequested: (PackageGroup) -> Unit
+    onLongPress: (PackageGroup) -> Unit
 ) {
     if (groups.isEmpty()) {
         EmptyState(iconRes = emptyIcon, title = emptyTitle, subtitle = emptySubtitle)
@@ -280,7 +386,7 @@ private fun GroupList(
                 PackageGroupCard(
                     group = group,
                     onPackageClick = onPackageClick,
-                    onLongClick = { onDeleteRequested(group) },
+                    onLongClick = { onLongPress(group) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -295,7 +401,7 @@ private fun GroupList(
 private fun NotYetSentList(
     packages: List<TrackedPackage>,
     onPackageClick: (Long) -> Unit,
-    onDeleteRequested: (TrackedPackage) -> Unit
+    onLongPress: (TrackedPackage) -> Unit
 ) {
     if (packages.isEmpty()) {
         EmptyState(
@@ -312,7 +418,7 @@ private fun NotYetSentList(
                 PackageCard(
                     pkg = pkg,
                     onClick = { onPackageClick(pkg.id) },
-                    onLongClick = { onDeleteRequested(pkg) },
+                    onLongClick = { onLongPress(pkg) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp)

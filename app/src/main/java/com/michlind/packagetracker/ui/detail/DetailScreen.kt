@@ -27,8 +27,6 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,7 +35,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -73,7 +70,6 @@ import com.michlind.packagetracker.R
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.ui.components.SkeletonDetailHeader
-import com.michlind.packagetracker.ui.components.StatusBadge
 import com.michlind.packagetracker.ui.components.TimelineItem
 import com.michlind.packagetracker.ui.components.colorAndIcon
 import com.michlind.packagetracker.util.DateUtils
@@ -190,8 +186,7 @@ fun DetailScreen(
                 DetailContent(
                     pkg = state.pkg,
                     isRefreshing = isRefreshing,
-                    paddingValues = paddingValues,
-                    onToggleReceived = { viewModel.toggleReceived(packageId, !state.pkg.isReceived) }
+                    paddingValues = paddingValues
                 )
             }
         }
@@ -203,10 +198,8 @@ fun DetailScreen(
 private fun DetailContent(
     pkg: TrackedPackage,
     isRefreshing: Boolean,
-    paddingValues: PaddingValues,
-    onToggleReceived: () -> Unit
+    paddingValues: PaddingValues
 ) {
-    val haptic = LocalHapticFeedback.current
     val nameTooltipState = rememberTooltipState(isPersistent = true)
     val tooltipScope = rememberCoroutineScope()
 
@@ -408,40 +401,6 @@ private fun DetailContent(
             }
         }
 
-        // Mark received button
-        item {
-            Spacer(Modifier.height(24.dp))
-            if (pkg.isReceived) {
-                OutlinedButton(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onToggleReceived()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                ) {
-                    Text(stringResource(R.string.mark_as_in_transit))
-                }
-            } else {
-                Button(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onToggleReceived()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.mark_as_received))
-                }
-            }
-        }
     }
 }
 
