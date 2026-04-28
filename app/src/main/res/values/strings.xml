@@ -2,12 +2,12 @@
     <string name="app_name">AliTrack</string>
     <string name="tab_in_transit">In Transit</string>
     <string name="tab_received">Received</string>
-    <string name="tab_not_yet_sent">Not Yet Sent</string>
+    <string name="tab_not_yet_sent">To Ship</string>
     <string name="add_package">Add Package</string>
     <string name="edit_package">Edit Package</string>
     <string name="tracking_number">Tracking Number</string>
     <string name="tracking_number_optional">Tracking Number (optional)</string>
-    <string name="tracking_number_hint">Leave blank to save as "Not Yet Sent"</string>
+    <string name="tracking_number_hint">Leave blank to save as "To Ship"</string>
     <string name="package_name">Package Name (optional)</string>
     <string name="package_name_label">Package Name</string>
     <string name="track_button">Track</string>

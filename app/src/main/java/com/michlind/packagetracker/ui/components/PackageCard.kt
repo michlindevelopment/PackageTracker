@@ -75,8 +75,8 @@ fun PackageCard(
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.Top
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             // Photo or placeholder
             Box(
@@ -91,7 +91,8 @@ fun PackageCard(
                         model = pkg.photoUri,
                         contentDescription = "Package photo",
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.Center
                     )
                 } else {
                     Icon(
@@ -103,12 +104,11 @@ fun PackageCard(
                 }
             }
 
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(10.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Top
                 ) {
                     Text(
@@ -119,13 +119,13 @@ fun PackageCard(
                         ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
+                        modifier = Modifier.weight(1f)
                     )
                     if (pkg.name.isNotBlank()) {
                         TooltipBox(
                             positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
                             tooltip = {
-                                RichTooltip(title = { Text("Item name") }) {
+                                RichTooltip {
                                     Text(pkg.name)
                                 }
                             },
@@ -144,43 +144,45 @@ fun PackageCard(
                             }
                         }
                     }
-                    Spacer(Modifier.width(8.dp))
-                    StatusBadge(status = pkg.status)
                 }
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(0.dp))
 
                 pkg.lastEvent?.let { event ->
                     Text(
                         text = event.description,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         lineHeight = 18.sp
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(3.dp))
                 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    DateUtils.relativeTime(pkg.lastUpdated)?.let { updated ->
-                        Text(
-                            text = updated,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-                        )
-                    } ?: Spacer(Modifier.width(0.dp))
+                    // "Last updated" relative time — hidden for now; keep for future re-enable.
+                    // DateUtils.relativeTime(pkg.lastUpdated)?.let { updated ->
+                    //     Text(
+                    //         text = updated,
+                    //         style = MaterialTheme.typography.labelSmall,
+                    //         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                    //     )
+                    // }
                     pkg.daysInTransit?.let { days ->
+                        val n = days.filter { it.isDigit() }
                         Text(
-                            text = days,
+                            text = if (n.isNotEmpty()) "${n}d in transit" else days,
                             style = MaterialTheme.typography.labelSmall,
                             color = statusColor.copy(alpha = 0.8f),
                             fontWeight = FontWeight.Medium
                         )
-                    }
+                    } ?: Spacer(Modifier.width(0.dp))
+                    StatusBadge(status = pkg.status)
                 }
             }
         }
@@ -199,7 +201,7 @@ private fun PackageCardPreview() {
         ) {
             PackageCard(
                 pkg = com.michlind.packagetracker.ui.preview.samplePackage(
-                    name = "AliExpress Headphones",
+                    name = "AliExpress Headphones with a very long name that should be truncated",
                     status = com.michlind.packagetracker.domain.model.PackageStatus.IN_TRANSIT
                 ),
                 onClick = {}

@@ -7,7 +7,7 @@ import com.michlind.packagetracker.domain.model.TrackingEvent
 private val now: Long = 1_730_000_000_000L
 
 fun sampleEvent(
-    description: String = "Arrived at sorting center",
+    description: String = "Leaving from destination country/region",
     timeStr: String = "Apr 24, 2026 14:32",
     actionCode: String = "SC_INBOUND_SUCCESS",
     timeOffsetMs: Long = 0

@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -266,7 +267,7 @@ private fun DetailContent(
                             TooltipBox(
                                 positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
                                 tooltip = {
-                                    RichTooltip(title = { Text("Item name") }) {
+                                    RichTooltip {
                                         Text(pkg.name)
                                     }
                                 },
@@ -411,6 +412,14 @@ private fun ProgressStepper(currentStatus: PackageStatus, modifier: Modifier = M
         || currentStatus == PackageStatus.NOT_YET_SENT
     val currentStep = if (isException) 0 else currentStatus.stepIndex.coerceAtLeast(0)
 
+    // Lock the stepper text sizes to a fixed pixel size so they don't grow when
+    // the user enlarges the system font scale (the dot/spacing layout is dp-based
+    // and would otherwise overflow).
+    val density = LocalDensity.current
+    val headerSize = with(density) { 12.dp.toSp() }
+    val labelSize = with(density) { 9.dp.toSp() }
+    val labelLineHeight = with(density) { 12.dp.toSp() }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -421,6 +430,7 @@ private fun ProgressStepper(currentStatus: PackageStatus, modifier: Modifier = M
                 text = "Shipping Progress",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                fontSize = headerSize,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
             Row(
@@ -461,8 +471,8 @@ private fun ProgressStepper(currentStatus: PackageStatus, modifier: Modifier = M
                             color = if (isActive) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                             textAlign = TextAlign.Center,
-                            fontSize = 9.sp,
-                            lineHeight = 12.sp
+                            fontSize = labelSize,
+                            lineHeight = labelLineHeight
                         )
                     }
                 }

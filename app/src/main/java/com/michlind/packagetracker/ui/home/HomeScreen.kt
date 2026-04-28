@@ -518,32 +518,24 @@ fun PackageGroupCard(
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(
+                    Text(
+                        text = group.displayName,
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Text(
-                            text = group.displayName,
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            ),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                            lineHeight = 19.sp
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        StatusBadge(status = group.status)
-                    }
+                        lineHeight = 19.sp
+                    )
                     Spacer(Modifier.height(6.dp))
                     first.lastEvent?.let { event ->
                         Text(
                             text = event.description,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                            maxLines = 2,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             lineHeight = 18.sp
                         )
@@ -551,23 +543,27 @@ fun PackageGroupCard(
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        DateUtils.relativeTime(first.lastUpdated)?.let { updated ->
-                            Text(
-                                text = updated,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-                            )
-                        } ?: Spacer(Modifier.width(0.dp))
+                        // "Last updated" relative time — hidden for now; keep for future re-enable.
+                        // DateUtils.relativeTime(first.lastUpdated)?.let { updated ->
+                        //     Text(
+                        //         text = updated,
+                        //         style = MaterialTheme.typography.labelSmall,
+                        //         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                        //     )
+                        // }
                         first.daysInTransit?.let { days ->
+                            val n = days.filter { it.isDigit() }
                             Text(
-                                text = days,
+                                text = if (n.isNotEmpty()) "${n}d in transit" else days,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = statusColor.copy(alpha = 0.8f),
                                 fontWeight = FontWeight.Medium
                             )
-                        }
+                        } ?: Spacer(Modifier.width(0.dp))
+                        StatusBadge(status = group.status)
                     }
                 }
             }

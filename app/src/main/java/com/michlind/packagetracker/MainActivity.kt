@@ -34,10 +34,10 @@ import javax.inject.Inject
 /*
 * Better UI order
 * Hide tamir in settings
-* Setter login screen
+* Better login screen
 * Improve understanding for ali import (main screen plus) and text
-* Long click delete mark as received
-* Bug - package both in no yet sent and delivered
+* Long click delete mark as received - V
+* Bug - package both in no yet sent and delivered - V
 *
 * */
 

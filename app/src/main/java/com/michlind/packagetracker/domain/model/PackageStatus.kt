@@ -16,7 +16,7 @@ enum class PackageStatus {
 
     val displayName: String
         get() = when (this) {
-            NOT_YET_SENT     -> "Not Yet Sent"
+            NOT_YET_SENT     -> "To Ship"
             ORDER_PLACED     -> "Order Placed"
             SHIPPED          -> "Shipped"
             IN_TRANSIT       -> "In Transit"
