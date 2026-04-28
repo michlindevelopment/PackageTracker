@@ -11,4 +11,5 @@ sealed class Screen(val route: String) {
     }
     data object Settings : Screen("settings")
     data object AliImport : Screen("aliexpress_import")
+    data object Contributors : Screen("contributors")
 }

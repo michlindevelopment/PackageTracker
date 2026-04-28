@@ -18,6 +18,7 @@ import androidx.navigation.navArgument
 import com.michlind.packagetracker.ui.add.AddEditScreen
 import com.michlind.packagetracker.ui.aliimport.AliImportScreen
 import com.michlind.packagetracker.ui.attach.AttachImageSheet
+import com.michlind.packagetracker.ui.contributors.ContributorsScreen
 import com.michlind.packagetracker.ui.detail.DetailScreen
 import com.michlind.packagetracker.ui.home.HomeScreen
 import com.michlind.packagetracker.ui.settings.SettingsScreen
@@ -87,6 +88,15 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
 
         composable(Screen.Settings.route) {
             SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onContributorsClick = {
+                    navController.navigate(Screen.Contributors.route)
+                }
+            )
+        }
+
+        composable(Screen.Contributors.route) {
+            ContributorsScreen(
                 onBack = { navController.popBackStack() }
             )
         }
