@@ -9,18 +9,28 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -28,6 +38,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,6 +62,7 @@ fun SettingsScreen(
 ) {
     val theme by viewModel.theme.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -57,6 +70,34 @@ fun SettingsScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.clearMessage()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.checkForUpdates()
+    }
+
+    if (updateState is UpdateUiState.NeedsInstallPermission) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissUpdateState() },
+            title = { Text("Permission needed") },
+            text = {
+                Text(
+                    "Android needs your OK before AliTrack can install updates. " +
+                        "Tap Open Settings, enable \"Allow from this source\", " +
+                        "then come back and tap Update again."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.openInstallPermissionSettings() }) {
+                    Text("Open settings")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissUpdateState() }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -76,6 +117,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
             SectionTitle("Theme")
@@ -123,8 +165,176 @@ fun SettingsScreen(
                 Spacer(Modifier.size(8.dp))
                 Text("Send test notification")
             }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            SectionTitle("About")
+            Spacer(Modifier.height(8.dp))
+            UpdateSection(
+                currentVersion = viewModel.currentVersion,
+                state = updateState,
+                onCheck = { viewModel.checkForUpdates() },
+                onUpdate = { viewModel.startUpdate() }
+            )
         }
     }
+}
+
+@Composable
+private fun UpdateSection(
+    currentVersion: String,
+    state: UpdateUiState,
+    onCheck: () -> Unit,
+    onUpdate: () -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Default.Info,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.size(12.dp))
+        Text("Installed version", style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = "v$currentVersion",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium
+        )
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Default.CloudDownload,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.size(12.dp))
+        Text("Latest on GitHub", style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.weight(1f))
+        when (state) {
+            is UpdateUiState.Checking -> CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp
+            )
+            is UpdateUiState.UpToDate -> Text(
+                text = "v$currentVersion",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium
+            )
+            is UpdateUiState.Available -> Text(
+                text = "v${state.latestVersion}",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            is UpdateUiState.Downloading,
+            is UpdateUiState.ReadyToInstall -> { /* covered below */ }
+            else -> Text(
+                text = "—",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+            )
+        }
+    }
+
+    Spacer(Modifier.height(16.dp))
+
+    when (state) {
+        is UpdateUiState.Idle, is UpdateUiState.Error,
+        is UpdateUiState.UpToDate, is UpdateUiState.NeedsInstallPermission -> {
+            OutlinedButton(
+                onClick = onCheck,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.size(8.dp))
+                Text("Check for updates")
+            }
+        }
+        is UpdateUiState.Checking -> {
+            OutlinedButton(
+                onClick = {},
+                enabled = false,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(Modifier.size(8.dp))
+                Text("Checking…")
+            }
+        }
+        is UpdateUiState.Available -> {
+            Button(
+                onClick = onUpdate,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudDownload,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.size(8.dp))
+                Text("Update to v${state.latestVersion} (${formatSize(state.sizeBytes)})")
+            }
+        }
+        is UpdateUiState.Downloading -> {
+            Column {
+                LinearProgressIndicator(
+                    progress = { state.percent / 100f },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Downloading… ${state.percent}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                )
+            }
+        }
+        is UpdateUiState.ReadyToInstall -> {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = "Download complete — finish in the system installer.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
+
+    if (state is UpdateUiState.Error) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = state.message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
+}
+
+private fun formatSize(bytes: Long): String {
+    if (bytes <= 0) return "?"
+    val mb = bytes / 1024.0 / 1024.0
+    return "%.1f MB".format(mb)
 }
 
 @Composable
