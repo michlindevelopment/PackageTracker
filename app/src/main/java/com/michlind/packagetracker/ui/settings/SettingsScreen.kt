@@ -69,8 +69,15 @@ fun SettingsScreen(
     val theme by viewModel.theme.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+    val isAliConnected by viewModel.isAliConnected.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showDisconnectDialog by remember { mutableStateOf(false) }
+
+    // Re-check connection state every time the screen is shown — the user may
+    // have logged in via the import flow since they last visited Settings.
+    LaunchedEffect(Unit) {
+        viewModel.refreshAliConnection()
+    }
 
     LaunchedEffect(message) {
         message?.let {
@@ -206,14 +213,42 @@ fun SettingsScreen(
 
             SectionTitle("AliExpress")
             Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val statusColor = if (isAliConnected)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                Icon(
+                    imageVector = if (isAliConnected) Icons.Default.CheckCircle
+                    else Icons.Default.LinkOff,
+                    contentDescription = null,
+                    tint = statusColor,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = if (isAliConnected) "Connected" else "Not connected",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = statusColor,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Spacer(Modifier.height(8.dp))
             Text(
-                text = "Sign out of AliExpress in the import browser. Already " +
-                    "imported packages stay; the next import will ask for login.",
+                text = if (isAliConnected)
+                    "Sign out of AliExpress in the import browser. Already " +
+                        "imported packages stay; the next import will ask for login."
+                else
+                    "You're not signed in to AliExpress. Use \"Import from " +
+                        "AliExpress\" on the home screen to log in.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
             )
             Spacer(Modifier.height(12.dp))
-            OutlinedButton(onClick = { showDisconnectDialog = true }) {
+            OutlinedButton(
+                onClick = { showDisconnectDialog = true },
+                enabled = isAliConnected
+            ) {
                 Icon(
                     imageVector = Icons.Default.LinkOff,
                     contentDescription = null,

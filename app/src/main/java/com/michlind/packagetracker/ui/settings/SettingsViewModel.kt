@@ -53,7 +53,26 @@ class SettingsViewModel @Inject constructor(
     private val _updateState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
     val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()
 
+    private val _isAliConnected = MutableStateFlow(false)
+    val isAliConnected: StateFlow<Boolean> = _isAliConnected.asStateFlow()
+
     private var pendingDownloadUrl: String? = null
+
+    init {
+        refreshAliConnection()
+    }
+
+    // The AliExpress login marker is the `sign=y` cookie on aliexpress.com —
+    // same heuristic used by AliImportScreen to decide login vs orders page.
+    fun refreshAliConnection() {
+        val cookies = try {
+            CookieManager.getInstance().getCookie("https://www.aliexpress.com").orEmpty()
+        } catch (e: Exception) {
+            Log.e(TAG, "refreshAliConnection failed", e)
+            ""
+        }
+        _isAliConnected.value = cookies.contains("sign=y")
+    }
 
     fun setTheme(value: ThemePreference) {
         themeRepo.setTheme(value)
@@ -159,6 +178,7 @@ class SettingsViewModel @Inject constructor(
             CookieManager.getInstance().removeAllCookies(null)
             CookieManager.getInstance().flush()
             WebStorage.getInstance().deleteAllData()
+            _isAliConnected.value = false
             _message.value = "Disconnected from AliExpress"
         } catch (e: Exception) {
             Log.e(TAG, "disconnectFromAliExpress failed", e)

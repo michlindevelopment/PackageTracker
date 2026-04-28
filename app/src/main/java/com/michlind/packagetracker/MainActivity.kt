@@ -38,7 +38,7 @@ import javax.inject.Inject
 * Improve understanding for ali import (main screen plus) and text
 * Long click delete mark as received - V
 * Bug - package both in no yet sent and delivered - V
-*
+* Disable add from view all when nothing shopped
 * */
 
 @AndroidEntryPoint
