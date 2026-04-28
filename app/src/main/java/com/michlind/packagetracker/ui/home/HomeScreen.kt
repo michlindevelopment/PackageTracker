@@ -10,9 +10,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -462,8 +466,8 @@ fun PackageGroupCard(
 
     Box(
         modifier = modifier
-            .shadow(elevation = 4.dp, shape = RoundedCornerShape(16.dp), clip = false)
-            .clip(RoundedCornerShape(16.dp))
+            .shadow(elevation = 4.dp, shape = RoundedCornerShape(19.dp), clip = false)
+            .clip(RoundedCornerShape(19.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .background(gradient)
             // Long-press anywhere on the card outside a sub-row deletes the
@@ -478,16 +482,19 @@ fun PackageGroupCard(
             // Header — mirrors PackageCard layout. The outer combinedClickable
             // already handles tap → first package, so the header itself
             // doesn't need an extra clickable.
+            // Photo stays 82.dp square and is vertically centered. When font
+            // scale grows the column grows, the row gets taller, and the photo
+            // just sits centered while title pins to top, bottom row to bottom.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.Top
+                    .padding(19.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(68.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .size(82.dp)
+                        .clip(RoundedCornerShape(17.dp))
                         .background(statusColor.copy(alpha = 0.22f)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -497,15 +504,15 @@ fun PackageGroupCard(
                         imageVector = Icons.Default.Inventory2,
                         contentDescription = null,
                         tint = statusColor.copy(alpha = 0.7f),
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(38.dp)
                     )
                     // Count badge overlay
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(4.dp)
+                            .padding(5.dp)
                             .background(statusColor, RoundedCornerShape(50))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = group.packages.size.toString(),
@@ -516,20 +523,25 @@ fun PackageGroupCard(
                         )
                     }
                 }
-                Spacer(Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Spacer(Modifier.width(17.dp))
+                // Column min-matches the photo's height so a short title still pins
+                // to the top and the bottom row to the bottom (aligned with the
+                // photo's top and bottom edges); a longer title can grow the column.
+                Column(
+                    modifier = Modifier.weight(1f).heightIn(min = 82.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text(
                         text = group.displayName,
                         style = MaterialTheme.typography.titleSmall.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
+                            fontSize = 16.sp
                         ),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth(),
-                        lineHeight = 19.sp
+                        lineHeight = 20.sp
                     )
-                    Spacer(Modifier.height(6.dp))
                     first.lastEvent?.let { event ->
                         Text(
                             text = event.description,
@@ -539,7 +551,6 @@ fun PackageGroupCard(
                             overflow = TextOverflow.Ellipsis,
                             lineHeight = 18.sp
                         )
-                        Spacer(Modifier.height(4.dp))
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -570,7 +581,7 @@ fun PackageGroupCard(
 
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
-                modifier = Modifier.padding(horizontal = 16.dp)
+                modifier = Modifier.padding(horizontal = 19.dp)
             )
 
             // Sub-items — image + title only, no status
@@ -587,13 +598,13 @@ private fun SubPackageRow(pkg: TrackedPackage, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 19.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(53.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
@@ -608,18 +619,18 @@ private fun SubPackageRow(pkg: TrackedPackage, onClick: () -> Unit) {
                 Icon(
                     imageVector = Icons.Default.Inventory2,
                     contentDescription = null,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(26.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Text(
             text = pkg.name.ifBlank { "Package" },
             style = MaterialTheme.typography.bodySmall.copy(
                 fontWeight = FontWeight.Medium,
-                fontSize = 12.sp,
-                lineHeight = 15.sp
+                fontSize = 13.sp,
+                lineHeight = 16.sp
             ),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,

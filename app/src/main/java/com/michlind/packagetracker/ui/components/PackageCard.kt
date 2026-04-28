@@ -18,9 +18,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -68,21 +72,26 @@ fun PackageCard(
 
     Box(
         modifier = modifier
-            .shadow(elevation = 4.dp, shape = RoundedCornerShape(16.dp), clip = false)
-            .clip(RoundedCornerShape(16.dp))
+            .shadow(elevation = 4.dp, shape = RoundedCornerShape(19.dp), clip = false)
+            .clip(RoundedCornerShape(19.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .background(gradient)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
+        // Photo stays a fixed 82.dp square and is vertically centered inside
+        // the row. When the user increases system font scale, the column's
+        // text grows and the row taller than 82.dp — the photo just sits
+        // centered while the title pins to the top and the bottom row pins
+        // to the bottom of the (taller) column.
         Row(
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Photo or placeholder
             Box(
                 modifier = Modifier
-                    .size(68.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .size(82.dp)
+                    .clip(RoundedCornerShape(17.dp))
                     .background(statusColor.copy(alpha = 0.22f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -99,14 +108,20 @@ fun PackageCard(
                         imageVector = Icons.Default.Inventory2,
                         contentDescription = null,
                         tint = statusColor.copy(alpha = 0.7f),
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(38.dp)
                     )
                 }
             }
 
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(12.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
+            // Min-height = photo height so a short title still pins the bottom
+            // row to the photo's bottom edge; longer / larger-font titles let
+            // the column grow naturally past 82.dp.
+            Column(
+                modifier = Modifier.weight(1f).heightIn(min = 82.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Top
@@ -115,10 +130,11 @@ fun PackageCard(
                         text = pkg.name.ifBlank { pkg.trackingNumber },
                         style = MaterialTheme.typography.titleSmall.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
+                            fontSize = 16.sp
                         ),
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        lineHeight = 20.sp,
                         modifier = Modifier.weight(1f)
                     )
                     if (pkg.name.isNotBlank()) {
@@ -146,8 +162,6 @@ fun PackageCard(
                     }
                 }
 
-                Spacer(Modifier.height(0.dp))
-
                 pkg.lastEvent?.let { event ->
                     Text(
                         text = event.description,
@@ -157,7 +171,6 @@ fun PackageCard(
                         overflow = TextOverflow.Ellipsis,
                         lineHeight = 18.sp
                     )
-                    Spacer(Modifier.height(3.dp))
                 }
 
                 Row(
