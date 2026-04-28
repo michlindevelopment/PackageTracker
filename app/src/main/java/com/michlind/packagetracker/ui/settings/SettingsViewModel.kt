@@ -2,6 +2,8 @@ package com.michlind.packagetracker.ui.settings
 
 import android.content.Context
 import android.util.Log
+import android.webkit.CookieManager
+import android.webkit.WebStorage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.michlind.packagetracker.BuildConfig
@@ -148,6 +150,20 @@ class SettingsViewModel @Inject constructor(
 
     fun dismissUpdateState() {
         _updateState.value = UpdateUiState.Idle
+    }
+
+    // Clears the WebView session AliExpress uses for import — cookies (notably
+    // `sign=y`, the login marker) and localStorage. Next import opens login.
+    fun disconnectFromAliExpress() {
+        try {
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
+            WebStorage.getInstance().deleteAllData()
+            _message.value = "Disconnected from AliExpress"
+        } catch (e: Exception) {
+            Log.e(TAG, "disconnectFromAliExpress failed", e)
+            _message.value = "Couldn't disconnect from AliExpress"
+        }
     }
 
     fun clearMessage() { _message.value = null }

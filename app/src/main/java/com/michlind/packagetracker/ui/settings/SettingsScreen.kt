@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -45,7 +46,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -67,6 +70,7 @@ fun SettingsScreen(
     val message by viewModel.message.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showDisconnectDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
         message?.let {
@@ -77,6 +81,33 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) {
         viewModel.checkForUpdates()
+    }
+
+    if (showDisconnectDialog) {
+        AlertDialog(
+            onDismissRequest = { showDisconnectDialog = false },
+            title = { Text("Disconnect from AliExpress?") },
+            text = {
+                Text(
+                    "This signs you out of AliExpress in the import browser. " +
+                        "Already imported packages stay in the app; the next " +
+                        "import will ask you to log in again."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDisconnectDialog = false
+                    viewModel.disconnectFromAliExpress()
+                }) {
+                    Text("Disconnect", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisconnectDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (updateState is UpdateUiState.NeedsInstallPermission) {
@@ -167,6 +198,29 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.size(8.dp))
                 Text("Send test notification")
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            SectionTitle("AliExpress")
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Sign out of AliExpress in the import browser. Already " +
+                    "imported packages stay; the next import will ask for login.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = { showDisconnectDialog = true }) {
+                Icon(
+                    imageVector = Icons.Default.LinkOff,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.size(8.dp))
+                Text("Disconnect from AliExpress")
             }
 
             Spacer(Modifier.height(16.dp))
