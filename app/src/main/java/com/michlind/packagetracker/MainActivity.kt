@@ -34,11 +34,12 @@ import javax.inject.Inject
 /*
 * Better UI order
 * Hide tamir in settings
-* Better login screen
+* Better login screen - Not working
 * Improve understanding for ali import (main screen plus) and text
 * Long click delete mark as received - V
 * Bug - package both in no yet sent and delivered - V
 * Disable add from view all when nothing shopped
+* Packages already imported skip import by pack number
 * */
 
 @AndroidEntryPoint
