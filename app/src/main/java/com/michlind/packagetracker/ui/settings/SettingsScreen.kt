@@ -1,5 +1,6 @@
 package com.michlind.packagetracker.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,9 +38,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -73,6 +77,8 @@ fun SettingsScreen(
     val toShipPages by viewModel.toShipPages.collectAsStateWithLifecycle()
     val shippedPages by viewModel.shippedPages.collectAsStateWithLifecycle()
     val processedPages by viewModel.processedPages.collectAsStateWithLifecycle()
+    val notificationsEnabled by viewModel.notificationsEnabled.collectAsStateWithLifecycle()
+    var showBudgetSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     var showDisconnectDialog by remember { mutableStateOf(false) }
 
@@ -91,6 +97,21 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) {
         viewModel.checkForUpdates()
+    }
+
+    if (showBudgetSheet) {
+        ImportBudgetSheet(
+            initialToShip = toShipPages,
+            initialShipped = shippedPages,
+            initialProcessed = processedPages,
+            onDismiss = { showBudgetSheet = false },
+            onConfirm = { newToShip, newShipped, newProcessed ->
+                viewModel.setToShipPages(newToShip)
+                viewModel.setShippedPages(newShipped)
+                viewModel.setProcessedPages(newProcessed)
+                showBudgetSheet = false
+            }
+        )
     }
 
     if (showDisconnectDialog) {
@@ -193,12 +214,26 @@ fun SettingsScreen(
 
             SectionTitle("Notifications")
             Spacer(Modifier.height(8.dp))
-            Text(
-                text = "Send a sample notification using a random package " +
-                    "from your list — useful to confirm Android allows them.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Status update notifications",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Notify me when a package's tracking status changes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                    )
+                }
+                Switch(
+                    checked = notificationsEnabled,
+                    onCheckedChange = { viewModel.setNotificationsEnabled(it) }
+                )
+            }
             Spacer(Modifier.height(12.dp))
             OutlinedButton(onClick = { viewModel.sendTestNotification() }) {
                 Icon(
@@ -264,28 +299,31 @@ fun SettingsScreen(
             Spacer(Modifier.height(20.dp))
             SectionTitle("Import page budgets")
             Spacer(Modifier.height(8.dp))
-            Text(
-                text = "How many \"View more\" clicks per tab during an import. " +
-                    "Set to 0 to skip a tab entirely.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
-            )
-            Spacer(Modifier.height(12.dp))
-            PageBudgetRow(
-                label = "To ship",
-                value = toShipPages,
-                onChange = viewModel::setToShipPages
-            )
-            PageBudgetRow(
-                label = "Shipped",
-                value = shippedPages,
-                onChange = viewModel::setShippedPages
-            )
-            PageBudgetRow(
-                label = "Processed",
-                value = processedPages,
-                onChange = viewModel::setProcessedPages
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showBudgetSheet = true }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Per-tab page count",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "To ship: $toShipPages • Shipped: $shippedPages • " +
+                            "Processed: $processedPages",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
@@ -533,6 +571,73 @@ private fun PageBudgetRow(
             onClick = { onChange(value + 1) },
             enabled = value < 100
         ) { Text("+", style = MaterialTheme.typography.titleLarge) }
+    }
+}
+
+// Bottom sheet with three steppers + Confirm. Edits are local; Confirm
+// commits all three to the repository, dismiss/cancel discards them.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ImportBudgetSheet(
+    initialToShip: Int,
+    initialShipped: Int,
+    initialProcessed: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (toShip: Int, shipped: Int, processed: Int) -> Unit
+) {
+    var toShip by remember(initialToShip) { mutableStateOf(initialToShip) }
+    var shipped by remember(initialShipped) { mutableStateOf(initialShipped) }
+    var processed by remember(initialProcessed) { mutableStateOf(initialProcessed) }
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 24.dp)
+        ) {
+            Text(
+                text = "Import page budgets",
+                style = MaterialTheme.typography.titleLarge
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "How many \"View more\" clicks per tab during an import. " +
+                    "Set to 0 to skip a tab entirely.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+            )
+            Spacer(Modifier.height(12.dp))
+            PageBudgetRow(
+                label = "To ship",
+                value = toShip,
+                onChange = { toShip = it.coerceIn(0, 100) }
+            )
+            PageBudgetRow(
+                label = "Shipped",
+                value = shipped,
+                onChange = { shipped = it.coerceIn(0, 100) }
+            )
+            PageBudgetRow(
+                label = "Processed",
+                value = processed,
+                onChange = { processed = it.coerceIn(0, 100) }
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+                Spacer(Modifier.size(8.dp))
+                Button(onClick = { onConfirm(toShip, shipped, processed) }) {
+                    Text("Confirm")
+                }
+            }
+        }
     }
 }
 

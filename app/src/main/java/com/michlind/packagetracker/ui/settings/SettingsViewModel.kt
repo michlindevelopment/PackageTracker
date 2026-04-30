@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.michlind.packagetracker.BuildConfig
 import com.michlind.packagetracker.data.preferences.AliImportPreferenceRepository
+import com.michlind.packagetracker.data.preferences.NotificationPreferenceRepository
 import com.michlind.packagetracker.data.preferences.ThemePreferenceRepository
 import com.michlind.packagetracker.data.updater.AppUpdater
 import com.michlind.packagetracker.data.updater.DownloadProgress
@@ -40,6 +41,7 @@ sealed interface UpdateUiState {
 class SettingsViewModel @Inject constructor(
     private val themeRepo: ThemePreferenceRepository,
     private val importPrefs: AliImportPreferenceRepository,
+    private val notificationPrefs: NotificationPreferenceRepository,
     private val packageRepository: PackageRepository,
     private val checkForUpdate: CheckForUpdateUseCase,
     private val appUpdater: AppUpdater,
@@ -54,6 +56,9 @@ class SettingsViewModel @Inject constructor(
     fun setToShipPages(value: Int) = importPrefs.setToShipPages(value)
     fun setShippedPages(value: Int) = importPrefs.setShippedPages(value)
     fun setProcessedPages(value: Int) = importPrefs.setProcessedPages(value)
+
+    val notificationsEnabled: StateFlow<Boolean> = notificationPrefs.enabled
+    fun setNotificationsEnabled(value: Boolean) = notificationPrefs.setEnabled(value)
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -94,6 +99,8 @@ class SettingsViewModel @Inject constructor(
             val packages = packageRepository.getNonReceivedPackages()
             Log.d(TAG, "fetched non-received packages: count=${packages.size}")
             if (packages.isEmpty()) {
+                // The "no packages" case still needs the snackbar — there's no
+                // notification to confirm success, so the user needs feedback.
                 _message.value = "No packages to test with — add one first."
                 Log.d(TAG, "no packages — aborting test notification")
                 return@launch
@@ -108,7 +115,7 @@ class SettingsViewModel @Inject constructor(
                 newStatus = pkg.status.displayName,
                 photoUri = pkg.photoUri
             )
-            _message.value = "Test notification sent for \"$displayName\""
+            // Success feedback is the notification itself — no snackbar needed.
             Log.d(TAG, "test notification request completed for id=${pkg.id}")
         }
     }

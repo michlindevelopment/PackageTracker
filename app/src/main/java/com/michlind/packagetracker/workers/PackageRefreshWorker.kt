@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.michlind.packagetracker.data.preferences.NotificationPreferenceRepository
 import com.michlind.packagetracker.domain.repository.PackageRepository
 import com.michlind.packagetracker.util.NotificationUtils
 import dagger.assisted.Assisted
@@ -19,7 +20,8 @@ import java.util.concurrent.TimeUnit
 class PackageRefreshWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val repository: PackageRepository
+    private val repository: PackageRepository,
+    private val notificationPrefs: NotificationPreferenceRepository
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -29,10 +31,11 @@ class PackageRefreshWorker @AssistedInject constructor(
                 .filter { it.trackingNumber.isNotBlank() }
                 .groupBy { it.trackingNumber }
 
+            val notify = notificationPrefs.enabled.value
             byTracking.forEach { (trackingNumber, pkgs) ->
                 repository.refreshTrackingNumber(trackingNumber).onSuccess { changes ->
                     pkgs.forEach { pkg ->
-                        if (changes[pkg.id] == true) {
+                        if (changes[pkg.id] == true && notify) {
                             val updated = repository.getPackageById(pkg.id)
                             NotificationUtils.sendStatusUpdateNotification(
                                 context = applicationContext,

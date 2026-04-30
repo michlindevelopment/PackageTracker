@@ -11,10 +11,14 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface PackageDao {
 
-    @Query("SELECT * FROM packages WHERE isReceived = 0 AND status != 'NOT_YET_SENT' ORDER BY lastUpdated DESC")
+    // Tiebreaker on `id DESC`: imported packages start with lastUpdated = 0,
+    // so without the tiebreaker SQLite returns them in rowid-ASC order
+    // (first-scraped = oldest at top, which inverts the AliExpress listing
+    // order). Higher id = more recently inserted = newer on AliExpress.
+    @Query("SELECT * FROM packages WHERE isReceived = 0 AND status != 'NOT_YET_SENT' ORDER BY lastUpdated DESC, id DESC")
     fun getActivePackages(): Flow<List<PackageEntity>>
 
-    @Query("SELECT * FROM packages WHERE isReceived = 1 ORDER BY lastUpdated DESC")
+    @Query("SELECT * FROM packages WHERE isReceived = 1 ORDER BY lastUpdated DESC, id DESC")
     fun getReceivedPackages(): Flow<List<PackageEntity>>
 
     @Query("SELECT * FROM packages WHERE status = 'NOT_YET_SENT' AND isReceived = 0 ORDER BY createdAt DESC")
