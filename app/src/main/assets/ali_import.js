@@ -420,9 +420,15 @@
     return found;
   }
 
+  // Returns 0 (sentinel) when the date text doesn't parse — DO NOT use
+  // Date.now() here. parseOrderDate is called sequentially during the scrape,
+  // so Date.now() returns successively larger values for orders scraped later
+  // (= older on AliExpress's page). sortedByDescending then puts those larger
+  // values on top and inverts the entire list. With 0, unparseable dates tie
+  // and the DAO's `id DESC` tiebreaker (= newest insertion first) takes over.
   function parseOrderDate(text) {
     var t = new Date(text).getTime();
-    return isNaN(t) ? Date.now() : t;
+    return isNaN(t) ? 0 : t;
   }
 
   // Classify the AliExpress card status. The three statuses we care about:

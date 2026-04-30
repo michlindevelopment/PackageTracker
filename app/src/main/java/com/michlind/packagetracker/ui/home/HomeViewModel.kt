@@ -37,11 +37,34 @@ data class PackageGroup(
 }
 
 // "Order date" = earliest tracking event time for the package (when the order
-// was first recorded by the carrier). Falls back to createdAt when no events.
+// was first recorded by the carrier).
+//   - With events: use the earliest event time.
+//   - Active without events: use createdAt (order-placement time).
+//   - Received without events: createdAt is unreliable for AliExpress imports
+//     (legacy buggy fallback inverted the order; new fallback is 0 sentinel),
+//     so fall back to lastUpdated instead — that's set by setReceived(now)
+//     for manual marks, and 0 for imported-as-received, which lets the DAO's
+//     `id DESC` tiebreaker order them by newest-scraped-first.
 private fun TrackedPackage.orderDate(): Long =
-    events.minOfOrNull { it.time } ?: createdAt
+    events.minOfOrNull { it.time }
+        ?: if (isReceived) lastUpdated else createdAt
 
-private fun List<TrackedPackage>.toGroups(): List<PackageGroup> =
+private enum class GroupSortMode {
+    // Sort by orderDate DESC — used for active packages, where event time
+    // gives a meaningful "freshness" ordering.
+    BY_ORDER_DATE,
+    // Used for received packages: the JS scrapes AliExpress's Processed tab
+    // top-down (newest first on the page), so the newest order is inserted
+    // first and gets the LOWEST auto-increment id in the batch. To keep the
+    // visual order of AliExpress, we sort by min id ASC within a group, with
+    // a lastUpdated DESC primary so manually-marked items (which set
+    // lastUpdated = now) float above the import block.
+    BY_RECEIVED
+}
+
+private fun List<TrackedPackage>.toGroups(
+    sortMode: GroupSortMode = GroupSortMode.BY_ORDER_DATE
+): List<PackageGroup> =
     groupBy { it.trackingNumber.ifBlank { it.id.toString() } }
         .entries
         .map { (tn, pkgs) ->
@@ -55,7 +78,20 @@ private fun List<TrackedPackage>.toGroups(): List<PackageGroup> =
                 lastUpdated = sorted.maxOf { it.lastUpdated }
             )
         }
-        .sortedByDescending { group -> group.packages.maxOf { it.orderDate() } }
+        .let { groups ->
+            when (sortMode) {
+                GroupSortMode.BY_ORDER_DATE ->
+                    groups.sortedByDescending { it.packages.maxOf { p -> p.orderDate() } }
+                GroupSortMode.BY_RECEIVED ->
+                    groups.sortedWith(
+                        compareByDescending<PackageGroup> { g ->
+                            g.packages.maxOf { it.lastUpdated }
+                        }.thenBy { g ->
+                            g.packages.minOf { it.id }
+                        }
+                    )
+            }
+        }
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -74,7 +110,7 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val receivedGroups: StateFlow<List<PackageGroup>> = getReceivedPackages()
-        .map { it.toGroups() }
+        .map { it.toGroups(GroupSortMode.BY_RECEIVED) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val notYetSentPackages: StateFlow<List<TrackedPackage>> = getNotYetSentPackages()
