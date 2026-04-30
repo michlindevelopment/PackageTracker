@@ -105,6 +105,7 @@ fun HomeScreen(
     val receivedGroups by viewModel.receivedGroups.collectAsStateWithLifecycle()
     val notYetSent by viewModel.notYetSentPackages.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val refreshingTn by viewModel.refreshingTrackingNumber.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -346,7 +347,8 @@ fun HomeScreen(
                     0 -> NotYetSentList(
                         packages = notYetSent,
                         onPackageClick = onPackageClick,
-                        onLongPress = { actionMenuPkg = it }
+                        onLongPress = { actionMenuPkg = it },
+                        refreshingTrackingNumber = refreshingTn
                     )
                     1 -> GroupList(
                         groups = activeGroups,
@@ -354,7 +356,8 @@ fun HomeScreen(
                         emptyTitle = stringResource(R.string.empty_in_transit),
                         emptySubtitle = stringResource(R.string.empty_in_transit_sub),
                         onPackageClick = onPackageClick,
-                        onLongPress = { actionMenuGroup = it }
+                        onLongPress = { actionMenuGroup = it },
+                        refreshingTrackingNumber = refreshingTn
                     )
                     2 -> GroupList(
                         groups = receivedGroups,
@@ -362,7 +365,8 @@ fun HomeScreen(
                         emptyTitle = stringResource(R.string.empty_received),
                         emptySubtitle = stringResource(R.string.empty_received_sub),
                         onPackageClick = onPackageClick,
-                        onLongPress = { actionMenuGroup = it }
+                        onLongPress = { actionMenuGroup = it },
+                        refreshingTrackingNumber = refreshingTn
                     )
                 }
             }
@@ -377,7 +381,8 @@ private fun GroupList(
     emptyTitle: String,
     emptySubtitle: String,
     onPackageClick: (Long) -> Unit,
-    onLongPress: (PackageGroup) -> Unit
+    onLongPress: (PackageGroup) -> Unit,
+    refreshingTrackingNumber: String?
 ) {
     if (groups.isEmpty()) {
         EmptyState(iconRes = emptyIcon, title = emptyTitle, subtitle = emptySubtitle)
@@ -391,6 +396,8 @@ private fun GroupList(
                     group = group,
                     onPackageClick = onPackageClick,
                     onLongClick = { onLongPress(group) },
+                    isRefreshing = refreshingTrackingNumber != null &&
+                        refreshingTrackingNumber == group.trackingNumber,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -405,7 +412,8 @@ private fun GroupList(
 private fun NotYetSentList(
     packages: List<TrackedPackage>,
     onPackageClick: (Long) -> Unit,
-    onLongPress: (TrackedPackage) -> Unit
+    onLongPress: (TrackedPackage) -> Unit,
+    refreshingTrackingNumber: String?
 ) {
     if (packages.isEmpty()) {
         EmptyState(
@@ -423,6 +431,8 @@ private fun NotYetSentList(
                     pkg = pkg,
                     onClick = { onPackageClick(pkg.id) },
                     onLongClick = { onLongPress(pkg) },
+                    isRefreshing = refreshingTrackingNumber != null &&
+                        refreshingTrackingNumber == pkg.trackingNumber,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -439,13 +449,15 @@ fun PackageGroupCard(
     group: PackageGroup,
     onPackageClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    isRefreshing: Boolean = false
 ) {
     if (!group.isMultiple) {
         PackageCard(
             pkg = group.packages.first(),
             onClick = { onPackageClick(group.packages.first().id) },
             onLongClick = onLongClick,
+            isRefreshing = isRefreshing,
             modifier = modifier
         )
         return
@@ -574,7 +586,7 @@ fun PackageGroupCard(
                                 fontWeight = FontWeight.Medium
                             )
                         } ?: Spacer(Modifier.width(0.dp))
-                        StatusBadge(status = group.status)
+                        StatusBadge(status = group.status, isRefreshing = isRefreshing)
                     }
                 }
             }

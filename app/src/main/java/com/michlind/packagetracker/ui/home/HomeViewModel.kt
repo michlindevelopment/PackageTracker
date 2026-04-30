@@ -79,6 +79,12 @@ class HomeViewModel @Inject constructor(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
+    // Tracking number currently being refreshed (null when nothing is in flight).
+    // Used by the home screen to animate the matching card's StatusBadge while
+    // its server-side refresh is happening.
+    private val _refreshingTrackingNumber = MutableStateFlow<String?>(null)
+    val refreshingTrackingNumber: StateFlow<String?> = _refreshingTrackingNumber.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -122,10 +128,14 @@ class HomeViewModel @Inject constructor(
                     .map { it.trackingNumber }
                     .filter { it.isNotBlank() }
                     .distinct()
-                    .forEach { tn -> refreshTrackingNumber(tn) }
+                    .forEach { tn ->
+                        _refreshingTrackingNumber.value = tn
+                        refreshTrackingNumber(tn)
+                    }
             } catch (_: Exception) {
                 _errorMessage.value = "Failed to refresh packages"
             } finally {
+                _refreshingTrackingNumber.value = null
                 _isRefreshing.value = false
             }
         }

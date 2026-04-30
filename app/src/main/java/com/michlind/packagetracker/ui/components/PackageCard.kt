@@ -1,9 +1,20 @@
 package com.michlind.packagetracker.ui.components
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.RichTooltip
@@ -56,7 +67,8 @@ fun PackageCard(
     pkg: TrackedPackage,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    isRefreshing: Boolean = false
 ) {
     val nameTooltipState = rememberTooltipState(isPersistent = true)
     val tooltipScope = rememberCoroutineScope()
@@ -132,7 +144,7 @@ fun PackageCard(
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         ),
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         lineHeight = 20.sp,
                         modifier = Modifier.weight(1f)
@@ -195,7 +207,7 @@ fun PackageCard(
                             fontWeight = FontWeight.Medium
                         )
                     } ?: Spacer(Modifier.width(0.dp))
-                    StatusBadge(status = pkg.status)
+                    StatusBadge(status = pkg.status, isRefreshing = isRefreshing)
                 }
             }
         }
