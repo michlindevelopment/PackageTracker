@@ -118,6 +118,13 @@ class PackageRepositoryImpl @Inject constructor(
     override suspend fun getByExternalOrderId(externalOrderId: String): TrackedPackage? =
         dao.getByExternalOrderId(externalOrderId)?.toDomain()
 
+    override suspend fun getImportedAliOrderIdsWithTracking(): Set<String> =
+        dao.getAliExternalOrderIdsWithTracking()
+            .asSequence()
+            .map { it.removePrefix("ali:") }
+            .filter { it.isNotBlank() }
+            .toSet()
+
     override suspend fun refreshTrackingNumber(trackingNumber: String): Result<Map<Long, Boolean>> {
         val existingRows = dao.getByTrackingNumber(trackingNumber)
         if (existingRows.isEmpty()) return Result.failure(Exception("Package not found"))

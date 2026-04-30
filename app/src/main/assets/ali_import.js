@@ -4,6 +4,25 @@
   var BRIDGE = window.AliBridge;
   if (!BRIDGE) return;
 
+  // Seed: orderIds we've already imported AND already have a tracking number
+  // for. Populated on the Kotlin side before this script runs. We skip the
+  // per-order iframe tracking-number lookup for these — re-fetching it would
+  // produce the same value the Kotlin SKIPPED branch is going to throw away.
+  var KNOWN_ORDER_IDS = (function () {
+    try {
+      var raw = (BRIDGE.getKnownOrderIds && BRIDGE.getKnownOrderIds()) || '[]';
+      var arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return Object.create(null);
+      var set = Object.create(null);
+      for (var i = 0; i < arr.length; i++) set[String(arr[i])] = true;
+      return set;
+    } catch (e) {
+      console.log('[Ali] failed to load known order ids: ' + (e && e.message));
+      return Object.create(null);
+    }
+  })();
+  console.log('[Ali] seeded known order ids count=' + Object.keys(KNOWN_ORDER_IDS).length);
+
   // Network spy — capture any XHR / fetch URL whose path looks tracking-related,
   // so if the popover loads its data via a separate API we can call it directly.
   (function () {
@@ -1081,11 +1100,13 @@
         return;
       }
       var o = all[i];
-      var skipTracking = isNotYetShipped(o.statusText) || isReceivedStatus(o.statusText);
+      var alreadyKnown = !!KNOWN_ORDER_IDS[o.orderId];
+      var skipTracking = isNotYetShipped(o.statusText) || isReceivedStatus(o.statusText) || alreadyKnown;
       console.log('[Ali] order ' + (i + 1) + '/' + all.length +
         ' id=' + o.orderId + ' name="' + (o.name || '').slice(0, 40) +
         '" cardStatus="' + (o.statusText || '') +
-        '" skipTracking=' + skipTracking);
+        '" skipTracking=' + skipTracking +
+        ' alreadyKnown=' + alreadyKnown);
 
       // Primary path: load /p/tracking/index.html in a hidden iframe and read
       // the tracking number from `[class*="mailNoValue"]`. Skip the lookup for

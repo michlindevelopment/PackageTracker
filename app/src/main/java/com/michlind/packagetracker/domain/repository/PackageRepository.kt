@@ -24,4 +24,12 @@ interface PackageRepository {
     suspend fun refreshTrackingNumber(trackingNumber: String): Result<Map<Long, Boolean>>
 
     suspend fun getByExternalOrderId(externalOrderId: String): TrackedPackage?
+
+    /**
+     * Returns the AliExpress orderIds (without the "ali:" prefix) of packages
+     * we've already imported AND that already have a tracking number on file.
+     * Used by the AliExpress import script to skip the per-order iframe lookup
+     * for orders we've already enriched.
+     */
+    suspend fun getImportedAliOrderIdsWithTracking(): Set<String>
 }

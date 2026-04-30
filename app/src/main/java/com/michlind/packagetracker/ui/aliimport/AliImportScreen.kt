@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 
 private const val ORDERS_URL = "https://www.aliexpress.com/p/order/index.html"
 private const val BRIDGE_NAME = "AliBridge"
@@ -70,6 +72,7 @@ fun AliImportScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -190,16 +193,21 @@ fun AliImportScreen(
                 ImportOverlay(
                     state = state,
                     onStart = {
-                        viewModel.beginImport()
-                        val js = runCatching {
-                            val cfg = context.assets.open("ali_import_config.js")
-                                .bufferedReader().use { it.readText() }
-                            val main = context.assets.open("ali_import.js")
-                                .bufferedReader().use { it.readText() }
-                            cfg + "\n" + main
-                        }.getOrNull()
-                        if (js != null) {
-                            webViewRef.value?.evaluateJavascript(js, null)
+                        // beginImport() suspends while it loads the seed list
+                        // of already-imported orderIds onto the bridge — must
+                        // complete before the JS runs and calls getKnownOrderIds().
+                        scope.launch {
+                            viewModel.beginImport()
+                            val js = runCatching {
+                                val cfg = context.assets.open("ali_import_config.js")
+                                    .bufferedReader().use { it.readText() }
+                                val main = context.assets.open("ali_import.js")
+                                    .bufferedReader().use { it.readText() }
+                                cfg + "\n" + main
+                            }.getOrNull()
+                            if (js != null) {
+                                webViewRef.value?.evaluateJavascript(js, null)
+                            }
                         }
                     },
                     onDone = onDone,

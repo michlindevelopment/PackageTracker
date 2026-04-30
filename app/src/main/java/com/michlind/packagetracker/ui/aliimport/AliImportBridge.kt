@@ -11,6 +11,16 @@ sealed interface AliImportEvent {
 }
 
 class AliImportBridge(private val sink: (AliImportEvent) -> Unit) {
+    // JSON array of AliExpress orderIds we've already imported with a known
+    // tracking number. The ViewModel populates this before injecting the
+    // import script; the script reads it via getKnownOrderIds() and skips
+    // the iframe tracking-number lookup for matching orders.
+    @Volatile
+    var knownOrderIdsJson: String = "[]"
+
+    @JavascriptInterface
+    fun getKnownOrderIds(): String = knownOrderIdsJson
+
     @JavascriptInterface
     fun onProgress(message: String) { sink(AliImportEvent.Progress(message)) }
 

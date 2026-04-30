@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.michlind.packagetracker.domain.model.AliOrderImport
 import com.michlind.packagetracker.domain.model.ImportResult
+import com.michlind.packagetracker.domain.repository.PackageRepository
 import com.michlind.packagetracker.domain.usecase.ImportAliOrderUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +48,7 @@ sealed interface AliImportState {
 @HiltViewModel
 class AliImportViewModel @Inject constructor(
     private val importOrder: ImportAliOrderUseCase,
+    private val repository: PackageRepository,
     private val gson: Gson
 ) : ViewModel() {
 
@@ -85,7 +87,14 @@ class AliImportViewModel @Inject constructor(
         }
     }
 
-    fun beginImport() {
+    suspend fun beginImport() {
+        // Seed the JS bridge with orderIds we already have a tracking number
+        // for, so the script can skip the per-order iframe lookup for them.
+        val ids = withContext(Dispatchers.IO) {
+            runCatching { repository.getImportedAliOrderIdsWithTracking() }
+                .getOrDefault(emptySet())
+        }
+        bridge.knownOrderIdsJson = gson.toJson(ids)
         _state.value = AliImportState.Importing(statusText = "Starting…")
     }
 
