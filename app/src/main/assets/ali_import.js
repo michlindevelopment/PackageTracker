@@ -75,6 +75,9 @@
     noDetailDelayMs: 50,
     expandClickDelayMs: 1200,
     maxExpandPasses: 20,
+    toShipMaxPasses: 20,
+    shippedMaxPasses: 20,
+    processedMaxPasses: 1,
     mtopWaitIntervalMs: 200,
     mtopWaitMaxTries: 50,
     domTrackingEnabled: true,
@@ -90,6 +93,16 @@
   };
   var CFG = (function () {
     var src = window.__AliImportConfig || {};
+    // Bridge overrides win over the static config (settings UI → bridge → here).
+    try {
+      var raw = (BRIDGE.getConfigOverrides && BRIDGE.getConfigOverrides()) || '{}';
+      var overrides = JSON.parse(raw);
+      if (overrides && typeof overrides === 'object') {
+        for (var ok in overrides) src[ok] = overrides[ok];
+      }
+    } catch (e) {
+      console.log('[Ali] failed to merge config overrides: ' + (e && e.message));
+    }
     var out = {};
     for (var k in DEFAULTS) out[k] = (k in src) ? src[k] : DEFAULTS[k];
     return out;
@@ -242,6 +255,10 @@
   // "Shipped" matcher: must contain "shipped" as a standalone word.
   function isShippedLabel(s) {
     return /(^|[^a-z])shipped([^a-z]|$)/.test(s);
+  }
+  // "Processed" tab — matches "processed" or AliExpress's "completed" variant.
+  function isProcessedLabel(s) {
+    return /(^|[^a-z])(processed|completed)([^a-z]|$)/.test(s);
   }
 
   function getCookie(name, key) {
@@ -1007,10 +1024,10 @@
     }
 
     // Interleave extract → click → wait → extract. Keeps clicking the
-    // "View more" button until none is left or until maxExpandPasses (safety
-    // cap, ~20). The active tab is narrow ("To ship" / "Shipped") so the
-    // cap should never trigger in practice.
-    function expandAndExtract() {
+    // "View more" button until none is left or until maxPasses passes.
+    // maxPasses is per-tab so the user can pull deep history from one tab
+    // without paying for it on the others (Processed defaults to 1).
+    function expandAndExtract(maxPasses) {
       return new Promise(function (resolve) {
         var clickPasses = 0;
         function ingestSnapshot() {
@@ -1028,9 +1045,9 @@
         }
         function step() {
           ingestSnapshot();
-          if (clickPasses >= CFG.maxExpandPasses) {
+          if (clickPasses >= maxPasses) {
             console.log('[Ali] expand cap reached at pass=' + clickPasses +
-              ' (maxExpandPasses=' + CFG.maxExpandPasses + ')');
+              ' (maxPasses=' + maxPasses + ')');
             resolve();
             return;
           }
@@ -1043,7 +1060,7 @@
             return;
           }
           clickPasses++;
-          console.log('[Ali] expand pass ' + clickPasses + '/' + CFG.maxExpandPasses +
+          console.log('[Ali] expand pass ' + clickPasses + '/' + maxPasses +
             ': clicking ' + hits.length + ' [' +
             hits.map(function (h) { return '"' + h.text + '" (' + h.source + ')'; }).join(', ') + ']');
           for (var k = 0; k < hits.length; k++) {
@@ -1062,29 +1079,32 @@
 
     function startListing() {
       if (!CFG.domListingEnabled) return fetchNextPage();
-      // Click "To ship" → expand & extract; then "Shipped" → expand & extract.
-      // We deliberately skip "Completed" tab — the user doesn't want received
-      // orders imported. seenIds dedupes if an order appears in both tabs.
-      try { BRIDGE.onProgress('Loading "To ship" orders…'); } catch (_) {}
-      return clickTab(isToShipLabel, 'To ship')
-        .then(expandAndExtract)
+      // Each tab has its own page-budget from settings. 0 = skip the tab.
+      // seenIds dedupes if an order appears in multiple tabs.
+      function scrapeTab(matcher, debugName, maxPasses) {
+        if (maxPasses <= 0) {
+          console.log('[Ali] skipping "' + debugName + '" tab (budget=0)');
+          return Promise.resolve();
+        }
+        try { BRIDGE.onProgress('Loading "' + debugName + '" orders…'); } catch (_) {}
+        return clickTab(matcher, debugName)
+          .then(function () { return expandAndExtract(maxPasses); })
+          .then(function () {
+            console.log('[Ali] "' + debugName + '" done, total=' + all.length);
+          });
+      }
+      return scrapeTab(isToShipLabel, 'To ship', CFG.toShipMaxPasses)
+        .then(function () { return scrapeTab(isShippedLabel, 'Shipped', CFG.shippedMaxPasses); })
+        .then(function () { return scrapeTab(isProcessedLabel, 'Processed', CFG.processedMaxPasses); })
         .then(function () {
-          console.log('[Ali] "To ship" done, total=' + all.length);
-          try { BRIDGE.onProgress('Loading "Shipped" orders…'); } catch (_) {}
-          return clickTab(isShippedLabel, 'Shipped');
-        })
-        .then(expandAndExtract)
-        .then(function () {
-          console.log('[Ali] "Shipped" done, total=' + all.length);
           if (all.length === 0) {
             console.log('[Ali] DOM listing empty — running diagnostic dump');
             try { dumpPostExpandDomState(); } catch (e) {
               console.log('[Ali] dumpPostExpandDomState threw: ' + (e && e.message));
             }
           }
-          // No "all"-tab fallback: the user only wants "To ship" + "Shipped".
-          // Falling back to the listing API with statusTab:'all' would pull in
-          // completed/received orders.
+          // No "all"-tab fallback: tabs are explicitly per-budget; falling
+          // back to statusTab:'all' would pull in unwanted older orders.
           return finishListing();
         });
     }

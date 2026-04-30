@@ -7,6 +7,7 @@ import android.webkit.WebStorage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.michlind.packagetracker.BuildConfig
+import com.michlind.packagetracker.data.preferences.AliImportPreferenceRepository
 import com.michlind.packagetracker.data.preferences.ThemePreferenceRepository
 import com.michlind.packagetracker.data.updater.AppUpdater
 import com.michlind.packagetracker.data.updater.DownloadProgress
@@ -38,12 +39,21 @@ sealed interface UpdateUiState {
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val themeRepo: ThemePreferenceRepository,
+    private val importPrefs: AliImportPreferenceRepository,
     private val packageRepository: PackageRepository,
     private val checkForUpdate: CheckForUpdateUseCase,
     private val appUpdater: AppUpdater,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
     val theme: StateFlow<ThemePreference> = themeRepo.theme
+
+    val toShipPages: StateFlow<Int> = importPrefs.toShipPages
+    val shippedPages: StateFlow<Int> = importPrefs.shippedPages
+    val processedPages: StateFlow<Int> = importPrefs.processedPages
+
+    fun setToShipPages(value: Int) = importPrefs.setToShipPages(value)
+    fun setShippedPages(value: Int) = importPrefs.setShippedPages(value)
+    fun setProcessedPages(value: Int) = importPrefs.setProcessedPages(value)
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()

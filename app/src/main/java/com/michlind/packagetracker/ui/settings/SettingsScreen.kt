@@ -70,6 +70,9 @@ fun SettingsScreen(
     val message by viewModel.message.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val isAliConnected by viewModel.isAliConnected.collectAsStateWithLifecycle()
+    val toShipPages by viewModel.toShipPages.collectAsStateWithLifecycle()
+    val shippedPages by viewModel.shippedPages.collectAsStateWithLifecycle()
+    val processedPages by viewModel.processedPages.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showDisconnectDialog by remember { mutableStateOf(false) }
 
@@ -257,6 +260,32 @@ fun SettingsScreen(
                 Spacer(Modifier.size(8.dp))
                 Text("Disconnect from AliExpress")
             }
+
+            Spacer(Modifier.height(20.dp))
+            SectionTitle("Import page budgets")
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "How many \"View more\" clicks per tab during an import. " +
+                    "Set to 0 to skip a tab entirely.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+            )
+            Spacer(Modifier.height(12.dp))
+            PageBudgetRow(
+                label = "To ship",
+                value = toShipPages,
+                onChange = viewModel::setToShipPages
+            )
+            PageBudgetRow(
+                label = "Shipped",
+                value = shippedPages,
+                onChange = viewModel::setShippedPages
+            )
+            PageBudgetRow(
+                label = "Processed",
+                value = processedPages,
+                onChange = viewModel::setProcessedPages
+            )
 
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
@@ -470,6 +499,41 @@ private fun SectionTitle(text: String) {
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary
     )
+}
+
+// Compact stepper: − / count / +. Clamps to 0..100 in the repository.
+@Composable
+private fun PageBudgetRow(
+    label: String,
+    value: Int,
+    onChange: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(
+            onClick = { onChange(value - 1) },
+            enabled = value > 0
+        ) { Text("−", style = MaterialTheme.typography.titleLarge) }
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        IconButton(
+            onClick = { onChange(value + 1) },
+            enabled = value < 100
+        ) { Text("+", style = MaterialTheme.typography.titleLarge) }
+    }
 }
 
 @Composable

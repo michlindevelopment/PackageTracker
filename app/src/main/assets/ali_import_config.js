@@ -38,9 +38,13 @@ window.__AliImportConfig = {
 
   // Expander loop timing — delay between successive "View more" clicks.
   expandClickDelayMs: 1200,
-  // Safety cap on expansion passes. We expect "To ship" and "Shipped" tabs
-  // to never need more than a handful of clicks, but cap at 20 just in case
-  // AliExpress ever shows a runaway list.
+  // Per-tab "View more" budget. 0 = skip the tab entirely. Defaults match
+  // the user-facing setting defaults; overridden at runtime via the bridge
+  // (AliImportBridge.getConfigOverrides) from user preferences.
+  toShipMaxPasses: 20,
+  shippedMaxPasses: 20,
+  processedMaxPasses: 1,
+  // Legacy combined cap — kept for any callsite that hasn't moved to per-tab.
   maxExpandPasses: 20,
 
   // mtop library wait — script gives up if lib.mtop isn't ready in time.

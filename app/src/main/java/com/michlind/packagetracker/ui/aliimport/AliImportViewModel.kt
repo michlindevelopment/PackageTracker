@@ -3,6 +3,7 @@ package com.michlind.packagetracker.ui.aliimport
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
+import com.michlind.packagetracker.data.preferences.AliImportPreferenceRepository
 import com.michlind.packagetracker.domain.model.AliOrderImport
 import com.michlind.packagetracker.domain.model.ImportResult
 import com.michlind.packagetracker.domain.repository.PackageRepository
@@ -49,6 +50,7 @@ sealed interface AliImportState {
 class AliImportViewModel @Inject constructor(
     private val importOrder: ImportAliOrderUseCase,
     private val repository: PackageRepository,
+    private val importPrefs: AliImportPreferenceRepository,
     private val gson: Gson
 ) : ViewModel() {
 
@@ -95,6 +97,16 @@ class AliImportViewModel @Inject constructor(
                 .getOrDefault(emptySet())
         }
         bridge.knownOrderIdsJson = gson.toJson(ids)
+
+        // User-tunable per-tab "View more" page budgets.
+        bridge.configOverridesJson = gson.toJson(
+            mapOf(
+                "toShipMaxPasses" to importPrefs.toShipPages.value,
+                "shippedMaxPasses" to importPrefs.shippedPages.value,
+                "processedMaxPasses" to importPrefs.processedPages.value
+            )
+        )
+
         _state.value = AliImportState.Importing(statusText = "Starting…")
     }
 

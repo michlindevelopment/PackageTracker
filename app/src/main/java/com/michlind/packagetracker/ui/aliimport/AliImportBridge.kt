@@ -18,8 +18,17 @@ class AliImportBridge(private val sink: (AliImportEvent) -> Unit) {
     @Volatile
     var knownOrderIdsJson: String = "[]"
 
+    // JSON object of __AliImportConfig keys to override at runtime — populated
+    // by the ViewModel from user settings (per-tab expand-pass budgets, etc.)
+    // before the import script is injected.
+    @Volatile
+    var configOverridesJson: String = "{}"
+
     @JavascriptInterface
     fun getKnownOrderIds(): String = knownOrderIdsJson
+
+    @JavascriptInterface
+    fun getConfigOverrides(): String = configOverridesJson
 
     @JavascriptInterface
     fun onProgress(message: String) { sink(AliImportEvent.Progress(message)) }
