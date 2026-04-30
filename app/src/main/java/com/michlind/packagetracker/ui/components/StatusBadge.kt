@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -63,12 +64,21 @@ fun StatusBadge(
     if (isRefreshing) {
         // Replace the text with the same status icon animating left → right
         // (a "moving forward" hint) while THIS package is being refreshed.
+        // An invisible Text with the same style as the non-refreshing branch
+        // reserves the badge's height so the surrounding row doesn't reflow
+        // when refresh toggles.
         BoxWithConstraints(
             modifier = modifier
                 .background(color.copy(alpha = 0.22f), RoundedCornerShape(50))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
-                .size(width = 64.dp, height = 16.dp)
+                .width(64.dp)
         ) {
+            Text(
+                text = " ",
+                fontSize = 11.sp,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.alpha(0f)
+            )
             val transition = rememberInfiniteTransition(label = "status_anim")
             val fraction by transition.animateFloat(
                 initialValue = 0f,

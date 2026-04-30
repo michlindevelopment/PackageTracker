@@ -32,13 +32,14 @@ import javax.inject.Inject
 
 //TODO
 /*
-* Better UI order
+
 * Hide tamir in settings
 * Improve understanding for ali import (main screen plus) and text
 * Disable add from view all when nothing shopped
 * Packages already imported skip import by pack number
 
-* * Better login screen - X
+* Better UI order - V
+* Better login screen - X
 * Long click delete mark as received - V
 * Bug - package both in no yet sent and delivered - V
 * */
