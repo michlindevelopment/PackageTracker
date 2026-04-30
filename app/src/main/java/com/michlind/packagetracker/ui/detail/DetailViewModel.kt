@@ -7,6 +7,7 @@ import com.michlind.packagetracker.domain.usecase.DeletePackageUseCase
 import com.michlind.packagetracker.domain.usecase.MarkAsReceivedUseCase
 import com.michlind.packagetracker.domain.usecase.RefreshPackageUseCase
 import com.michlind.packagetracker.domain.repository.PackageRepository
+import com.michlind.packagetracker.util.RemoteImageDownloader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,8 @@ class DetailViewModel @Inject constructor(
     private val repository: PackageRepository,
     private val deletePackage: DeletePackageUseCase,
     private val markAsReceived: MarkAsReceivedUseCase,
-    private val refreshPackage: RefreshPackageUseCase
+    private val refreshPackage: RefreshPackageUseCase,
+    private val imageDownloader: RemoteImageDownloader
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
@@ -70,7 +72,10 @@ class DetailViewModel @Inject constructor(
 
     fun delete(packageId: Long) {
         viewModelScope.launch {
+            // Detail-screen delete has no undo — clean up the image immediately.
+            val photoUri = (_uiState.value as? DetailUiState.Success)?.pkg?.photoUri
             deletePackage(packageId)
+            photoUri?.let { imageDownloader.delete(it) }
             _deleted.value = true
         }
     }

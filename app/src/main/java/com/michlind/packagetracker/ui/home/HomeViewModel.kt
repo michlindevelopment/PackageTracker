@@ -11,7 +11,10 @@ import com.michlind.packagetracker.domain.usecase.GetNotYetSentPackagesUseCase
 import com.michlind.packagetracker.domain.usecase.GetReceivedPackagesUseCase
 import com.michlind.packagetracker.domain.usecase.MarkAsReceivedUseCase
 import com.michlind.packagetracker.domain.usecase.RefreshTrackingNumberUseCase
+import com.michlind.packagetracker.util.RemoteImageDownloader
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -62,7 +65,8 @@ class HomeViewModel @Inject constructor(
     private val deletePackage: DeletePackageUseCase,
     private val addPackage: AddPackageUseCase,
     private val markAsReceived: MarkAsReceivedUseCase,
-    private val refreshTrackingNumber: RefreshTrackingNumberUseCase
+    private val refreshTrackingNumber: RefreshTrackingNumberUseCase,
+    private val imageDownloader: RemoteImageDownloader
 ) : ViewModel() {
 
     val activeGroups: StateFlow<List<PackageGroup>> = getActivePackages()
@@ -89,24 +93,56 @@ class HomeViewModel @Inject constructor(
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     private var lastDeletedPackages: List<TrackedPackage>? = null
+    private var pendingPhotoCleanup: Job? = null
 
     fun deleteGroup(group: PackageGroup) {
+        finalizePendingPhotoCleanup()
         lastDeletedPackages = group.packages
         viewModelScope.launch {
             group.packages.forEach { deletePackage(it.id) }
         }
+        scheduleDeferredPhotoCleanup(group.packages)
     }
 
     fun delete(pkg: TrackedPackage) {
+        finalizePendingPhotoCleanup()
         lastDeletedPackages = listOf(pkg)
         viewModelScope.launch { deletePackage(pkg.id) }
+        scheduleDeferredPhotoCleanup(listOf(pkg))
     }
 
     fun undoDelete() {
         val pkgs = lastDeletedPackages ?: return
+        // Cancel cleanup BEFORE re-adding so the file (still on disk) stays.
+        pendingPhotoCleanup?.cancel()
+        pendingPhotoCleanup = null
+        lastDeletedPackages = null
         viewModelScope.launch {
             pkgs.forEach { addPackage(it) }
-            lastDeletedPackages = null
+        }
+    }
+
+    // The delete snackbar uses SnackbarDuration.Short (~4s) plus a dismissal
+    // animation. Wait a bit longer to make sure undo had its chance, then
+    // delete the underlying image files.
+    private fun scheduleDeferredPhotoCleanup(pkgs: List<TrackedPackage>) {
+        pendingPhotoCleanup = viewModelScope.launch {
+            delay(8_000)
+            pkgs.forEach { it.photoUri?.let { uri -> imageDownloader.delete(uri) } }
+            if (lastDeletedPackages === pkgs) lastDeletedPackages = null
+            pendingPhotoCleanup = null
+        }
+    }
+
+    // If a previous deletion's grace window is still open when a new delete
+    // arrives, finalize it immediately — its undo affordance just got
+    // replaced by the new snackbar.
+    private fun finalizePendingPhotoCleanup() {
+        val prev = lastDeletedPackages ?: return
+        pendingPhotoCleanup?.cancel()
+        pendingPhotoCleanup = null
+        viewModelScope.launch {
+            prev.forEach { it.photoUri?.let { uri -> imageDownloader.delete(uri) } }
         }
     }
 

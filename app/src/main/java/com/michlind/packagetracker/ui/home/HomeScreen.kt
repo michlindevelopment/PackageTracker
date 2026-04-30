@@ -27,13 +27,16 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,6 +44,8 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -157,53 +162,52 @@ fun HomeScreen(
             ?: actionMenuPkg?.name?.ifBlank { null }
             ?: actionMenuPkg?.trackingNumber?.ifBlank { null }
             ?: stringResource(R.string.add_package)
-        AlertDialog(
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
             onDismissRequest = { actionMenuGroup = null; actionMenuPkg = null },
-            title = {
+            sheetState = sheetState
+        ) {
+            Column(modifier = Modifier.padding(bottom = 24.dp)) {
                 Text(
-                    menuTitle,
+                    text = menuTitle,
+                    style = MaterialTheme.typography.titleLarge,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleSmall
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                 )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            val group = actionMenuGroup
-                            val pkg = actionMenuPkg
-                            actionMenuGroup = null
-                            actionMenuPkg = null
-                            pendingToggleTarget = !isReceived
-                            if (group != null) pendingToggleGroup = group
-                            else pkg?.let { pendingTogglePkg = it }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(toggleLabel)
+                Spacer(Modifier.height(8.dp))
+                BottomSheetActionRow(
+                    icon = if (isReceived) Icons.Default.Replay else Icons.Default.CheckCircle,
+                    title = toggleLabel,
+                    subtitle = if (isReceived) "Move back to In Transit"
+                               else "Mark as delivered and move to Received",
+                    onClick = {
+                        val group = actionMenuGroup
+                        val pkg = actionMenuPkg
+                        actionMenuGroup = null
+                        actionMenuPkg = null
+                        pendingToggleTarget = !isReceived
+                        if (group != null) pendingToggleGroup = group
+                        else pkg?.let { pendingTogglePkg = it }
                     }
-                    Button(
-                        onClick = {
-                            val group = actionMenuGroup
-                            val pkg = actionMenuPkg
-                            actionMenuGroup = null
-                            actionMenuPkg = null
-                            if (group != null) pendingDeleteGroup = group
-                            else pkg?.let { pendingDeletePkg = it }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError
-                        )
-                    ) {
-                        Text(stringResource(R.string.delete))
+                )
+                BottomSheetActionRow(
+                    icon = Icons.Default.Delete,
+                    title = stringResource(R.string.delete),
+                    subtitle = "Remove from your list",
+                    iconTint = MaterialTheme.colorScheme.error,
+                    titleColor = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        val group = actionMenuGroup
+                        val pkg = actionMenuPkg
+                        actionMenuGroup = null
+                        actionMenuPkg = null
+                        if (group != null) pendingDeleteGroup = group
+                        else pkg?.let { pendingDeletePkg = it }
                     }
-                }
-            },
-            confirmButton = {}
-        )
+                )
+            }
+        }
     }
 
     // Mark-received confirmation dialog — second step after picking the toggle from the action menu
@@ -282,33 +286,38 @@ fun HomeScreen(
     }
 
     if (showAddOptions) {
-        AlertDialog(
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
             onDismissRequest = { showAddOptions = false },
-            title = { Text(stringResource(R.string.add_package)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            showAddOptions = false
-                            onImportFromAliExpress()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Auto-import from AliExpress")
+            sheetState = sheetState
+        ) {
+            Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                Text(
+                    text = stringResource(R.string.add_package),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                BottomSheetActionRow(
+                    icon = Icons.Default.ShoppingCart,
+                    title = "Auto-import from AliExpress",
+                    subtitle = "Sign in and pull recent orders",
+                    onClick = {
+                        showAddOptions = false
+                        onImportFromAliExpress()
                     }
-                    Button(
-                        onClick = {
-                            showAddOptions = false
-                            onAddClick()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Add manually")
+                )
+                BottomSheetActionRow(
+                    icon = Icons.Default.Edit,
+                    title = "Add manually",
+                    subtitle = "Enter a tracking number yourself",
+                    onClick = {
+                        showAddOptions = false
+                        onAddClick()
                     }
-                }
-            },
-            confirmButton = {}
-        )
+                )
+            }
+        }
     }
 
     Scaffold(
@@ -673,6 +682,40 @@ private fun SubPackageRow(pkg: TrackedPackage, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
+    }
+}
+
+@Composable
+private fun BottomSheetActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    iconTint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
+    titleColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(Modifier.width(20.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium, color = titleColor)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+            )
+        }
     }
 }
 

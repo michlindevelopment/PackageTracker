@@ -29,6 +29,20 @@ class RemoteImageDownloader @Inject constructor(
         }.getOrNull()
     }
 
+    /**
+     * Best-effort delete of a previously-downloaded image. Only deletes files
+     * that live in our [IMAGE_SUBDIR] so we never wipe out a user-supplied
+     * photo (e.g. a content:// URI from the gallery).
+     */
+    suspend fun delete(photoUri: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            if (!photoUri.startsWith("file://")) return@runCatching false
+            val file = File(photoUri.removePrefix("file://"))
+            if (file.parentFile?.name != IMAGE_SUBDIR) return@runCatching false
+            file.exists() && file.delete()
+        }.getOrDefault(false)
+    }
+
     companion object {
         private const val IMAGE_SUBDIR = "ali_images"
     }
