@@ -1057,13 +1057,16 @@
         .then(expandAndExtract)
         .then(function () {
           console.log('[Ali] "Shipped" done, total=' + all.length);
-          if (all.length > 0) return finishListing();
-          console.log('[Ali] DOM listing empty — running diagnostic dump');
-          try { dumpPostExpandDomState(); } catch (e) {
-            console.log('[Ali] dumpPostExpandDomState threw: ' + (e && e.message));
+          if (all.length === 0) {
+            console.log('[Ali] DOM listing empty — running diagnostic dump');
+            try { dumpPostExpandDomState(); } catch (e) {
+              console.log('[Ali] dumpPostExpandDomState threw: ' + (e && e.message));
+            }
           }
-          console.log('[Ali] falling back to API pagination');
-          return fetchNextPage();
+          // No "all"-tab fallback: the user only wants "To ship" + "Shipped".
+          // Falling back to the listing API with statusTab:'all' would pull in
+          // completed/received orders.
+          return finishListing();
         });
     }
 

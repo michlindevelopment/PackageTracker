@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -118,6 +117,8 @@ fun HomeScreen(
     // Long-press action menu state — single source of truth for both groups and standalone packages
     var actionMenuGroup by remember { mutableStateOf<PackageGroup?>(null) }
     var actionMenuPkg by remember { mutableStateOf<TrackedPackage?>(null) }
+    // Picker shown when the FAB is tapped: choose auto-import vs. manual add.
+    var showAddOptions by remember { mutableStateOf(false) }
     // Delete-confirmation state, shown only after the user picks "Delete" from the menu
     var pendingDeleteGroup by remember { mutableStateOf<PackageGroup?>(null) }
     var pendingDeletePkg by remember { mutableStateOf<TrackedPackage?>(null) }
@@ -280,6 +281,36 @@ fun HomeScreen(
         )
     }
 
+    if (showAddOptions) {
+        AlertDialog(
+            onDismissRequest = { showAddOptions = false },
+            title = { Text(stringResource(R.string.add_package)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            showAddOptions = false
+                            onImportFromAliExpress()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Auto-import from AliExpress")
+                    }
+                    Button(
+                        onClick = {
+                            showAddOptions = false
+                            onAddClick()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Add manually")
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -298,12 +329,6 @@ fun HomeScreen(
                             Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
                         }
                     }
-                    IconButton(onClick = onImportFromAliExpress) {
-                        Icon(
-                            Icons.Default.ShoppingCart,
-                            contentDescription = "Import from AliExpress"
-                        )
-                    }
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -313,7 +338,7 @@ fun HomeScreen(
         floatingActionButton = {
             FloatingActionButton(onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                onAddClick()
+                showAddOptions = true
             }) {
                 Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_package))
             }

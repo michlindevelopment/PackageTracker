@@ -2,6 +2,7 @@ package com.michlind.packagetracker.ui.contributors
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -88,6 +88,10 @@ fun ContributorsScreen(onBack: () -> Unit) {
     var bestScore by remember { mutableIntStateOf(0) }
     var playing by remember { mutableStateOf(false) }
     var hasStarted by remember { mutableStateOf(false) }
+    // Easter-egg gate: the game stays hidden until the user taps the
+    // contributor's name 5 times.
+    var gameUnlocked by remember { mutableStateOf(false) }
+    var nameTapCount by remember { mutableIntStateOf(0) }
 
     fun launchAtRandom() {
         val angleDeg = Random.nextInt(0, 360).toDouble()
@@ -151,6 +155,35 @@ fun ContributorsScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
+        if (!gameUnlocked) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 24.dp, vertical = 32.dp)
+            ) {
+                Text(
+                    text = "Special thanks",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = "Tamir Davidson",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            nameTapCount += 1
+                            if (nameTapCount >= 5) gameUnlocked = true
+                        }
+                        .padding(vertical = 12.dp)
+                )
+            }
+            return@Scaffold
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -274,25 +307,7 @@ fun ContributorsScreen(onBack: () -> Unit) {
                 }
             }
 
-            // Bottom: contributors list
             Spacer(Modifier.height(16.dp))
-            HorizontalDivider()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
-            ) {
-                Text(
-                    text = "Contributors",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "Special thanks to Tamir Davidson",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
         }
     }
 }

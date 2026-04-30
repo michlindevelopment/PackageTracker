@@ -33,11 +33,11 @@ import javax.inject.Inject
 //TODO
 /*
 
-* Hide tamir in settings
-* Improve understanding for ali import (main screen plus) and text
-* Disable add from view all when nothing shopped
 * Packages already imported skip import by pack number
 
+* Improve understanding for ali import (main screen plus) and text - V
+* Disable add from view all when nothing shopped - V
+* Hide tamir in settings - V
 * Better UI order - V
 * Better login screen - X
 * Long click delete mark as received - V
