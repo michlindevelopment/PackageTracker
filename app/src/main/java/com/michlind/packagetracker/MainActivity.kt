@@ -45,6 +45,7 @@ import javax.inject.Inject
 * During import keep screen on - V
 * Done and Start sometimes not working
 * Update items that recieved but in received status - V
+* Add option to reimport for items witout tracking number
 * */
 
 @AndroidEntryPoint

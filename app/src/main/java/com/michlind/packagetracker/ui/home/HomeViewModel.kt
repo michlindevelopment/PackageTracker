@@ -2,7 +2,9 @@ package com.michlind.packagetracker.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.michlind.packagetracker.data.preferences.SortPreferenceRepository
 import com.michlind.packagetracker.domain.model.PackageStatus
+import com.michlind.packagetracker.domain.model.SortMode
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.domain.usecase.AddPackageUseCase
 import com.michlind.packagetracker.domain.usecase.DeletePackageUseCase
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -49,22 +52,7 @@ private fun TrackedPackage.orderDate(): Long =
     events.minOfOrNull { it.time }
         ?: if (isReceived) lastUpdated else createdAt
 
-private enum class GroupSortMode {
-    // Sort by orderDate DESC — used for active packages, where event time
-    // gives a meaningful "freshness" ordering.
-    BY_ORDER_DATE,
-    // Used for received packages: the JS scrapes AliExpress's Processed tab
-    // top-down (newest first on the page), so the newest order is inserted
-    // first and gets the LOWEST auto-increment id in the batch. To keep the
-    // visual order of AliExpress, we sort by min id ASC within a group, with
-    // a lastUpdated DESC primary so manually-marked items (which set
-    // lastUpdated = now) float above the import block.
-    BY_RECEIVED
-}
-
-private fun List<TrackedPackage>.toGroups(
-    sortMode: GroupSortMode = GroupSortMode.BY_ORDER_DATE
-): List<PackageGroup> =
+private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup> =
     groupBy { it.trackingNumber.ifBlank { it.id.toString() } }
         .entries
         .map { (tn, pkgs) ->
@@ -80,16 +68,12 @@ private fun List<TrackedPackage>.toGroups(
         }
         .let { groups ->
             when (sortMode) {
-                GroupSortMode.BY_ORDER_DATE ->
+                SortMode.LAST_SHIPPED ->
                     groups.sortedByDescending { it.packages.maxOf { p -> p.orderDate() } }
-                GroupSortMode.BY_RECEIVED ->
-                    groups.sortedWith(
-                        compareByDescending<PackageGroup> { g ->
-                            g.packages.maxOf { it.lastUpdated }
-                        }.thenBy { g ->
-                            g.packages.minOf { it.id }
-                        }
-                    )
+                SortMode.FIRST_SHIPPED ->
+                    groups.sortedBy { it.packages.minOf { p -> p.orderDate() } }
+                SortMode.A_TO_Z ->
+                    groups.sortedBy { it.displayName.lowercase() }
             }
         }
 
@@ -102,19 +86,32 @@ class HomeViewModel @Inject constructor(
     private val addPackage: AddPackageUseCase,
     private val markAsReceived: MarkAsReceivedUseCase,
     private val refreshTrackingNumber: RefreshTrackingNumberUseCase,
-    private val imageDownloader: RemoteImageDownloader
+    private val imageDownloader: RemoteImageDownloader,
+    private val sortPrefs: SortPreferenceRepository
 ) : ViewModel() {
 
-    val activeGroups: StateFlow<List<PackageGroup>> = getActivePackages()
-        .map { it.toGroups() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val sortMode: StateFlow<SortMode> = sortPrefs.mode
 
-    val receivedGroups: StateFlow<List<PackageGroup>> = getReceivedPackages()
-        .map { it.toGroups(GroupSortMode.BY_RECEIVED) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun setSortMode(mode: SortMode) { sortPrefs.setMode(mode) }
 
-    val notYetSentPackages: StateFlow<List<TrackedPackage>> = getNotYetSentPackages()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val activeGroups: StateFlow<List<PackageGroup>> =
+        combine(getActivePackages(), sortMode) { pkgs, mode -> pkgs.toGroups(mode) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val receivedGroups: StateFlow<List<PackageGroup>> =
+        combine(getReceivedPackages(), sortMode) { pkgs, mode -> pkgs.toGroups(mode) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val notYetSentPackages: StateFlow<List<TrackedPackage>> =
+        combine(getNotYetSentPackages(), sortMode) { pkgs, mode ->
+            // No real "ship date" yet — fall back to createdAt so the time-based
+            // modes still produce a stable, sensible order.
+            when (mode) {
+                SortMode.LAST_SHIPPED -> pkgs.sortedByDescending { it.createdAt }
+                SortMode.FIRST_SHIPPED -> pkgs.sortedBy { it.createdAt }
+                SortMode.A_TO_Z -> pkgs.sortedBy { it.name.lowercase() }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()

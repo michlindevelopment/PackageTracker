@@ -26,7 +26,9 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -38,6 +40,8 @@ import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -86,6 +90,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.michlind.packagetracker.R
+import com.michlind.packagetracker.domain.model.SortMode
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.ui.components.EmptyState
 import com.michlind.packagetracker.ui.components.PackageCard
@@ -111,6 +116,8 @@ fun HomeScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val refreshingTn by viewModel.refreshingTrackingNumber.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
+    var sortMenuOpen by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
@@ -325,6 +332,28 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    Box {
+                        IconButton(onClick = { sortMenuOpen = true }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Sort,
+                                contentDescription = "Sort"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = sortMenuOpen,
+                            onDismissRequest = { sortMenuOpen = false }
+                        ) {
+                            SortMenuItem("Last shipped", SortMode.LAST_SHIPPED, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
+                            SortMenuItem("First shipped", SortMode.FIRST_SHIPPED, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
+                            SortMenuItem("A → Z", SortMode.A_TO_Z, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
+                        }
+                    }
                     IconButton(
                         onClick = { if (!isRefreshing) viewModel.refreshAll() },
                         enabled = !isRefreshing
@@ -683,6 +712,22 @@ private fun SubPackageRow(pkg: TrackedPackage, onClick: () -> Unit) {
             modifier = Modifier.weight(1f)
         )
     }
+}
+
+@Composable
+private fun SortMenuItem(
+    label: String,
+    mode: SortMode,
+    current: SortMode,
+    onPick: (SortMode) -> Unit
+) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        onClick = { onPick(mode) },
+        trailingIcon = if (mode == current) {
+            { Icon(Icons.Default.Check, contentDescription = null) }
+        } else null
+    )
 }
 
 @Composable
