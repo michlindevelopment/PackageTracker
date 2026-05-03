@@ -49,12 +49,13 @@ class ImportAliOrderUseCase @Inject constructor(
                     val localPhoto = order.imageUrl?.let {
                         imageDownloader.download(it, fileBaseName = order.orderId)
                     }
-                    // The card status is authoritative — a missing tracking
-                    // number on an "Awaiting delivery" card just means we
-                    // couldn't scrape it, NOT that the order hasn't shipped.
+                    // ORDER_PLACED requires a tracking number — without one we'd
+                    // have nothing to refresh against Cainiao. If the iframe scrape
+                    // failed on a shipped order, park it as NOT_YET_SENT; the
+                    // upgrade path below will promote it once a re-import succeeds.
                     val status = when {
                         received -> PackageStatus.DELIVERED
-                        notYetShipped -> PackageStatus.NOT_YET_SENT
+                        notYetShipped || tn.isBlank() -> PackageStatus.NOT_YET_SENT
                         else -> PackageStatus.ORDER_PLACED
                     }
                     val pkg = TrackedPackage(
@@ -84,36 +85,56 @@ class ImportAliOrderUseCase @Inject constructor(
                     ImportResult.ADDED
                 }
 
-                // Existing record — promote to Received if AliExpress now says
-                // the order is complete (the user might have confirmed receipt
-                // on the website since our last import).
-                received && !existing.isReceived -> {
-                    repository.updatePackage(
-                        existing.copy(
+                // Existing record — apply any upgrades AliExpress now offers:
+                //  - mark received if the order completed on the website
+                //  - fill in tracking number if the iframe scrape succeeded this time
+                //  - backfill name / image if a previous import didn't capture them
+                else -> {
+                    var updated = existing
+                    val reasons = mutableListOf<String>()
+
+                    if (received && !existing.isReceived) {
+                        updated = updated.copy(
                             isReceived = true,
                             status = PackageStatus.DELIVERED,
                             statusDescription = order.statusText.orEmpty()
                         )
-                    )
-                    Log.d(TAG, "  -> UPGRADED id=${existing.id} (now received)")
-                    ImportResult.UPGRADED
-                }
+                        reasons += "received"
+                    }
 
-                existing.trackingNumber.isBlank() && tn.isNotBlank() -> {
-                    repository.updatePackage(
-                        existing.copy(
+                    val gotTn = existing.trackingNumber.isBlank() && tn.isNotBlank()
+                    if (gotTn) {
+                        updated = updated.copy(
                             trackingNumber = tn,
-                            status = PackageStatus.ORDER_PLACED
+                            // don't downgrade DELIVERED above
+                            status = if (updated.status == PackageStatus.DELIVERED) updated.status
+                                     else PackageStatus.ORDER_PLACED
                         )
-                    )
-                    repository.refreshPackage(existing.id)
-                    Log.d(TAG, "  -> UPGRADED id=${existing.id} (got tn)")
-                    ImportResult.UPGRADED
-                }
+                        reasons += "got tn"
+                    }
 
-                else -> {
-                    Log.d(TAG, "  -> SKIPPED (already imported, no change)")
-                    ImportResult.SKIPPED
+                    if (existing.name.isBlank() && order.name.isNotBlank()) {
+                        updated = updated.copy(name = order.name)
+                        reasons += "name"
+                    }
+
+                    if (existing.photoUri.isNullOrBlank() && !order.imageUrl.isNullOrBlank()) {
+                        val photo = imageDownloader.download(order.imageUrl, fileBaseName = order.orderId)
+                        if (!photo.isNullOrBlank()) {
+                            updated = updated.copy(photoUri = photo)
+                            reasons += "photo"
+                        }
+                    }
+
+                    if (reasons.isEmpty()) {
+                        Log.d(TAG, "  -> SKIPPED (already imported, no change)")
+                        ImportResult.SKIPPED
+                    } else {
+                        repository.updatePackage(updated)
+                        if (gotTn) repository.refreshPackage(existing.id)
+                        Log.d(TAG, "  -> UPGRADED id=${existing.id} (${reasons.joinToString()})")
+                        ImportResult.UPGRADED
+                    }
                 }
             }
         }.getOrElse {
