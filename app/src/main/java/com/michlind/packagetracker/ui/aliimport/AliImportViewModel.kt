@@ -90,6 +90,12 @@ class AliImportViewModel @Inject constructor(
     }
 
     suspend fun beginImport() {
+        // Flip to Importing immediately (before the suspending DB read) so the
+        // Start button visibly disables on the first tap — otherwise the button
+        // stays ReadyToImport for the duration of the bridge seed and feels
+        // unresponsive.
+        _state.value = AliImportState.Importing(statusText = "Starting…")
+
         // Seed the JS bridge with orderIds we already have a tracking number
         // for, so the script can skip the per-order iframe lookup for them.
         val ids = withContext(Dispatchers.IO) {
@@ -106,8 +112,6 @@ class AliImportViewModel @Inject constructor(
                 "processedMaxPasses" to importPrefs.processedPages.value
             )
         )
-
-        _state.value = AliImportState.Importing(statusText = "Starting…")
     }
 
     fun reset() {

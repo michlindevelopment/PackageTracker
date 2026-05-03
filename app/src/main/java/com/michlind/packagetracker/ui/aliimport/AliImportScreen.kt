@@ -341,28 +341,34 @@ private fun ActionButton(
     onDone: () -> Unit,
     onRetry: () -> Unit
 ) {
-    when (state) {
-        AliImportState.Idle, AliImportState.Authenticating -> Button(
-            onClick = {},
-            enabled = false
-        ) { Text("Start import") }
-
-        AliImportState.ReadyToImport -> Button(onClick = onStart) {
-            Text("Start import")
+    // Single Button instance so its gesture node survives state transitions.
+    // Swapping between different Button() calls per state branch made the
+    // first tap on Start/Done occasionally race with the new node's clickable
+    // setup and get dropped.
+    val onClick: () -> Unit = when (state) {
+        AliImportState.ReadyToImport -> onStart
+        is AliImportState.Completed -> onDone
+        is AliImportState.Error -> onRetry
+        else -> { {} }
+    }
+    val enabled = state is AliImportState.ReadyToImport ||
+        state is AliImportState.Completed ||
+        state is AliImportState.Error
+    Button(onClick = onClick, enabled = enabled) {
+        when (state) {
+            is AliImportState.Importing -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Importing…")
+            }
+            is AliImportState.Completed -> Text("Done")
+            is AliImportState.Error -> Text("Retry")
+            else -> Text("Start import")
         }
-
-        is AliImportState.Importing -> Button(onClick = {}, enabled = false) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(16.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("Importing…")
-        }
-
-        is AliImportState.Completed -> Button(onClick = onDone) { Text("Done") }
-        is AliImportState.Error -> Button(onClick = onRetry) { Text("Retry") }
     }
 }
 
