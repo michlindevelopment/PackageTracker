@@ -332,28 +332,6 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
-                    Box {
-                        IconButton(onClick = { sortMenuOpen = true }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Sort,
-                                contentDescription = "Sort"
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = sortMenuOpen,
-                            onDismissRequest = { sortMenuOpen = false }
-                        ) {
-                            SortMenuItem("Last shipped", SortMode.LAST_SHIPPED, sortMode) {
-                                viewModel.setSortMode(it); sortMenuOpen = false
-                            }
-                            SortMenuItem("First shipped", SortMode.FIRST_SHIPPED, sortMode) {
-                                viewModel.setSortMode(it); sortMenuOpen = false
-                            }
-                            SortMenuItem("A → Z", SortMode.A_TO_Z, sortMode) {
-                                viewModel.setSortMode(it); sortMenuOpen = false
-                            }
-                        }
-                    }
                     IconButton(
                         onClick = { if (!isRefreshing) viewModel.refreshAll() },
                         enabled = !isRefreshing
@@ -365,6 +343,31 @@ fun HomeScreen(
                             )
                         } else {
                             Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
+                        }
+                    }
+                    Box {
+                        IconButton(onClick = { sortMenuOpen = true }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Sort,
+                                contentDescription = "Sort"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = sortMenuOpen,
+                            onDismissRequest = { sortMenuOpen = false }
+                        ) {
+                            SortMenuItem("Closest to delivery", SortMode.CLOSEST_TO_DELIVERY, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
+                            SortMenuItem("Last shipped", SortMode.LAST_SHIPPED, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
+                            SortMenuItem("First shipped", SortMode.FIRST_SHIPPED, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
+                            SortMenuItem("A → Z", SortMode.A_TO_Z, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
                         }
                     }
                     IconButton(onClick = onSettingsClick) {

@@ -68,6 +68,14 @@ private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup
         }
         .let { groups ->
             when (sortMode) {
+                SortMode.CLOSEST_TO_DELIVERY ->
+                    // Higher stepIndex = further along the pipeline. Tie-break
+                    // by most recent activity so packages on the same step keep
+                    // a sensible "fresh first" order.
+                    groups.sortedWith(
+                        compareByDescending<PackageGroup> { it.status.stepIndex }
+                            .thenByDescending { g -> g.packages.maxOf { it.lastUpdated } }
+                    )
                 SortMode.LAST_SHIPPED ->
                     groups.sortedByDescending { it.packages.maxOf { p -> p.orderDate() } }
                 SortMode.FIRST_SHIPPED ->
@@ -105,8 +113,11 @@ class HomeViewModel @Inject constructor(
     val notYetSentPackages: StateFlow<List<TrackedPackage>> =
         combine(getNotYetSentPackages(), sortMode) { pkgs, mode ->
             // No real "ship date" yet — fall back to createdAt so the time-based
-            // modes still produce a stable, sensible order.
+            // modes still produce a stable, sensible order. CLOSEST_TO_DELIVERY
+            // also collapses to createdAt since every NOT_YET_SENT package shares
+            // the same step.
             when (mode) {
+                SortMode.CLOSEST_TO_DELIVERY,
                 SortMode.LAST_SHIPPED -> pkgs.sortedByDescending { it.createdAt }
                 SortMode.FIRST_SHIPPED -> pkgs.sortedBy { it.createdAt }
                 SortMode.A_TO_Z -> pkgs.sortedBy { it.name.lowercase() }
