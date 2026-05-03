@@ -47,6 +47,9 @@ class PackageRepositoryImpl @Inject constructor(
     override suspend fun getNonReceivedPackages(): List<TrackedPackage> =
         dao.getNonReceivedPackages().map { it.toDomain() }
 
+    override suspend fun getPackagesEligibleForRefresh(): List<TrackedPackage> =
+        dao.getPackagesEligibleForRefresh().map { it.toDomain() }
+
     override suspend fun addPackage(pkg: TrackedPackage): Long {
         val entity = pkg.toEntity()
         return dao.insert(entity)

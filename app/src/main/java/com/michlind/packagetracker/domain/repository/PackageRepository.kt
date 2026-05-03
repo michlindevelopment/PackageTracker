@@ -10,6 +10,7 @@ interface PackageRepository {
     fun getNotYetSentPackages(): Flow<List<TrackedPackage>>
     suspend fun getPackageById(id: Long): TrackedPackage?
     suspend fun getNonReceivedPackages(): List<TrackedPackage>
+    suspend fun getPackagesEligibleForRefresh(): List<TrackedPackage>
     suspend fun addPackage(pkg: TrackedPackage): Long
     suspend fun updatePackage(pkg: TrackedPackage)
     suspend fun deletePackage(id: Long)

@@ -30,6 +30,13 @@ interface PackageDao {
     @Query("SELECT * FROM packages WHERE isReceived = 0 AND status != 'NOT_YET_SENT'")
     suspend fun getNonReceivedPackages(): List<PackageEntity>
 
+    // Used by refresh paths (manual + background worker). Includes packages the
+    // user marked received early but whose carrier status hasn't actually
+    // reached DELIVERED yet — Cainiao may still have new events for them.
+    // Excludes NOT_YET_SENT (no real TN to query) and DELIVERED (terminal).
+    @Query("SELECT * FROM packages WHERE trackingNumber != '' AND status NOT IN ('NOT_YET_SENT', 'DELIVERED')")
+    suspend fun getPackagesEligibleForRefresh(): List<PackageEntity>
+
     @Query("SELECT * FROM packages WHERE trackingNumber = :trackingNumber")
     suspend fun getByTrackingNumber(trackingNumber: String): List<PackageEntity>
 

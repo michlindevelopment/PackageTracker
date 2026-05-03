@@ -196,8 +196,15 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
-                activeGroups.value
+                // Active packages plus any in the Received column that the user
+                // marked manually before delivery actually completed (status
+                // hasn't reached DELIVERED yet, so Cainiao may still have new
+                // events for them).
+                val activeTns = activeGroups.value.map { it.trackingNumber }
+                val receivedTns = receivedGroups.value
+                    .filter { g -> g.packages.any { it.status != PackageStatus.DELIVERED } }
                     .map { it.trackingNumber }
+                (activeTns + receivedTns)
                     .filter { it.isNotBlank() }
                     .distinct()
                     .forEach { tn ->

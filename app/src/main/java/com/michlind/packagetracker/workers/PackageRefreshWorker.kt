@@ -26,10 +26,8 @@ class PackageRefreshWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         return try {
-            val packages = repository.getNonReceivedPackages()
-            val byTracking = packages
-                .filter { it.trackingNumber.isNotBlank() }
-                .groupBy { it.trackingNumber }
+            val packages = repository.getPackagesEligibleForRefresh()
+            val byTracking = packages.groupBy { it.trackingNumber }
 
             val notify = notificationPrefs.enabled.value
             byTracking.forEach { (trackingNumber, pkgs) ->

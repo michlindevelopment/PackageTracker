@@ -42,9 +42,9 @@ import javax.inject.Inject
 * Better login screen - X
 * Long click delete mark as received - V
 * Bug - package both in no yet sent and delivered - V
-* During import keep screen on
+* During import keep screen on - V
 * Done and Start sometimes not working
-* Update items that recieved but in received status
+* Update items that recieved but in received status - V
 * */
 
 @AndroidEntryPoint
