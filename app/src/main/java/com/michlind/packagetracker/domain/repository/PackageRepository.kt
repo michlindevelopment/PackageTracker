@@ -41,4 +41,12 @@ interface PackageRepository {
      * a tracking number.
      */
     suspend fun getBlankTrackingPackageIds(): List<Long>
+
+    /**
+     * Map of id → current tracking number for every non-received package.
+     * Used by Full Sync: snapshot before, diff after, refresh any package
+     * whose tracking number changed (blank → non-blank OR
+     * non-blank → different non-blank).
+     */
+    suspend fun getNonReceivedTrackingSnapshot(): Map<Long, String>
 }

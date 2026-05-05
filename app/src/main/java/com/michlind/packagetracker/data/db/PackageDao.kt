@@ -8,6 +8,11 @@ import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
+data class TrackingSnapshotRow(
+    val id: Long,
+    val trackingNumber: String
+)
+
 @Dao
 interface PackageDao {
 
@@ -48,6 +53,12 @@ interface PackageDao {
 
     @Query("SELECT id FROM packages WHERE trackingNumber = '' AND isReceived = 0")
     suspend fun getBlankTrackingPackageIds(): List<Long>
+
+    // (id, trackingNumber) for every non-received package — used by Full
+    // Sync to diff tracking numbers before/after an import and refresh
+    // anything that changed.
+    @Query("SELECT id, trackingNumber FROM packages WHERE isReceived = 0")
+    suspend fun getNonReceivedTrackingSnapshot(): List<TrackingSnapshotRow>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: PackageEntity): Long

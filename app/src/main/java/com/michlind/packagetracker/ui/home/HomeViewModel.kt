@@ -1,10 +1,14 @@
 package com.michlind.packagetracker.ui.home
 
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.michlind.packagetracker.data.preferences.AliImportPreferenceRepository
 import com.michlind.packagetracker.data.preferences.SortPreferenceRepository
+import com.michlind.packagetracker.domain.model.AliImportMode
 import com.michlind.packagetracker.domain.model.AliOrderImport
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.SortMode
@@ -35,6 +39,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
@@ -165,8 +171,34 @@ class HomeViewModel @Inject constructor(
     val bgBridge = AliImportBridge { event -> bgEventChannel.trySend(event) }
 
     private var bgImportOutcome: CompletableDeferred<BgImportOutcome>? = null
+    // Set by startRefreshChain() before flipping bgImportActive on; the
+    // bridge handler reads it to know whether existing packages should have
+    // their tracking number overwritten on a change (FullSync) or left alone
+    // (Quick).
+    @Volatile private var bgImportMode: AliImportMode = AliImportMode.Quick
+
+    // Serializes refresh-chain runs so combined methods like
+    // fullFetchThenSyncStatus can sequence two phases without their internal
+    // state (bgImportActive, _isRefreshing) racing each other. Declared
+    // before init because the lifecycle observer registered there fires an
+    // immediate ON_START on cold start, which transitively touches the mutex.
+    private val refreshMutex = Mutex()
+
+    // App-foreground listener: every time the process moves to STARTED
+    // (cold launch + resume from background), pull a fresh carrier status
+    // sync. addObserver replays events to bring the observer up to the
+    // current state, so on cold start (process already STARTED when the
+    // ViewModel is created) we immediately get an ON_START callback —
+    // which is exactly what we want for the initial sync.
+    private val processLifecycleObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+            syncStatus()
+        }
+    }
 
     init {
+        ProcessLifecycleOwner.get().lifecycle.addObserver(processLifecycleObserver)
+
         viewModelScope.launch {
             bgEventChannel.consumeAsFlow().collect { event ->
                 when (event) {
@@ -174,11 +206,13 @@ class HomeViewModel @Inject constructor(
                         // Same path as the manual import: parse the JSON and
                         // run it through the use case (which handles ADD /
                         // UPGRADE / SKIP and refreshes the carrier API for new
-                        // tracked items inline).
+                        // tracked items inline). Mode controls whether an
+                        // already-imported order's TN can be overwritten.
+                        val mode = bgImportMode
                         withContext(Dispatchers.IO) {
                             runCatching {
                                 val order = gson.fromJson(event.json, AliOrderImport::class.java)
-                                importOrder(order)
+                                importOrder(order, mode)
                             }
                         }
                     }
@@ -200,11 +234,22 @@ class HomeViewModel @Inject constructor(
      * hidden WebView. Mirrors AliImportViewModel.beginImport() — seeds the
      * bridge with the orderIds we already have a tracking number for, plus
      * the per-tab page-budget overrides from user prefs.
+     *
+     * In FullSync mode the seed is empty, so the JS does the per-order
+     * iframe lookup for every order — including ones we've imported before —
+     * and the use case sees the latest tracking number AliExpress is willing
+     * to report for each. That's how we detect TN changes for already-known
+     * orders (slower; intended for the explicit full-sync path).
      */
     suspend fun prepareBgImport() {
-        val ids = withContext(Dispatchers.IO) {
-            runCatching { repository.getImportedAliOrderIdsWithTracking() }
-                .getOrDefault(emptySet())
+        val mode = bgImportMode
+        val ids = if (mode == AliImportMode.FullSync) {
+            emptySet()
+        } else {
+            withContext(Dispatchers.IO) {
+                runCatching { repository.getImportedAliOrderIdsWithTracking() }
+                    .getOrDefault(emptySet())
+            }
         }
         bgBridge.knownOrderIdsJson = gson.toJson(ids)
         bgBridge.configOverridesJson = gson.toJson(
@@ -285,44 +330,95 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Refresh the carrier-side state for in-flight packages. When
-     * [runBgImport] is true (the default — Refresh button on Home), a
-     * background AliExpress import is chained after the API refresh and a
-     * targeted second refresh is run for any packages whose tracking number
-     * went from blank to non-blank during that import. The manual AliImport
-     * flow's post-Done refresh passes false here — the user just ran a full
-     * import explicitly, no point doing it again silently.
+     * (1/3) Carrier status sync only — pulls Cainiao for tracked packages
+     * that could still see new events. No AliExpress import at all.
      */
-    fun refreshAll(runBgImport: Boolean = true) {
-        viewModelScope.launch {
+    fun syncStatus() = viewModelScope.launch {
+        runChain(mode = AliImportMode.Quick, runStatusSync = true, runBgImport = false)
+    }
+
+    /**
+     * (2/3) Quick fetch — runs a background AliExpress import that *skips
+     * orders we've already enriched* (fast). New orders get added, blank
+     * tracking numbers get filled in. Does NOT do a broad carrier status
+     * refresh; only the targeted post-import refresh for newly-acquired
+     * tracking numbers runs.
+     */
+    fun quickFetch() = viewModelScope.launch {
+        runChain(mode = AliImportMode.Quick, runStatusSync = false, runBgImport = true)
+    }
+
+    /**
+     * (3/3) Full fetch — runs a background AliExpress import that re-reads
+     * every order. Same as quickFetch plus: detects tracking-number changes
+     * for orders already imported (only for `ali:`-owned orders, so manual
+     * edits stay untouched). Like quickFetch, no broad carrier status
+     * refresh — only targeted refresh for tracking numbers that changed.
+     */
+    fun fullFetch() = viewModelScope.launch {
+        runChain(mode = AliImportMode.FullSync, runStatusSync = false, runBgImport = true)
+    }
+
+    /** quickFetch followed by syncStatus — for the Refresh sheet. */
+    fun quickFetchThenSyncStatus() = viewModelScope.launch {
+        runChain(AliImportMode.Quick, runStatusSync = false, runBgImport = true)
+        runChain(AliImportMode.Quick, runStatusSync = true, runBgImport = false)
+    }
+
+    /** fullFetch followed by syncStatus — for the Refresh sheet and the
+     *  post-manual-import flow. */
+    fun fullFetchThenSyncStatus() = viewModelScope.launch {
+        runChain(AliImportMode.FullSync, runStatusSync = false, runBgImport = true)
+        runChain(AliImportMode.Quick, runStatusSync = true, runBgImport = false)
+    }
+
+    private suspend fun runChain(
+        mode: AliImportMode,
+        runStatusSync: Boolean,
+        runBgImport: Boolean
+    ) {
+        refreshMutex.withLock {
             _isRefreshing.value = true
             try {
-                // Phase 1 — refresh the carrier-side state for everything that
-                // could still see new events. Active packages plus any in the
-                // Received column that the user marked early (status hasn't
-                // reached DELIVERED yet, so Cainiao may still have updates).
-                val activeTns = activeGroups.value.map { it.trackingNumber }
-                val receivedTns = receivedGroups.value
-                    .filter { g -> g.packages.any { it.status != PackageStatus.DELIVERED } }
-                    .map { it.trackingNumber }
-                (activeTns + receivedTns)
-                    .filter { it.isNotBlank() }
-                    .distinct()
-                    .forEach { tn ->
-                        _refreshingTrackingNumber.value = tn
-                        refreshTrackingNumber(tn)
-                    }
-                _refreshingTrackingNumber.value = null
+                // Phase 1 — refresh the carrier-side state for everything
+                // that could still see new events. Active packages plus any
+                // in the Received column that the user marked early (status
+                // hasn't reached DELIVERED yet, so Cainiao may still have
+                // updates). Only syncStatus() runs this; the fetch flows
+                // skip it because their interesting work is the AliExpress
+                // pull plus a targeted post-import refresh.
+                if (runStatusSync) {
+                    val activeTns = activeGroups.value.map { it.trackingNumber }
+                    val receivedTns = receivedGroups.value
+                        .filter { g -> g.packages.any { it.status != PackageStatus.DELIVERED } }
+                        .map { it.trackingNumber }
+                    (activeTns + receivedTns)
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                        .forEach { tn ->
+                            _refreshingTrackingNumber.value = tn
+                            refreshTrackingNumber(tn)
+                        }
+                    _refreshingTrackingNumber.value = null
+                }
 
-                if (!runBgImport) return@launch
+                if (!runBgImport) return@withLock
 
-                // Phase 2 — snapshot ids of non-received packages with a blank
-                // tracking number. After the bg import we'll re-check just
-                // these ids; the ones whose tracking went blank → non-blank
-                // are the only ones worth a fresh API call.
-                val blankIds = withContext(Dispatchers.IO) {
-                    runCatching { repository.getBlankTrackingPackageIds().toSet() }
-                        .getOrDefault(emptySet())
+                // Phase 2 — snapshot for the post-import diff. Quick mode
+                // only cares about packages without a TN yet (blank → set is
+                // the only change Quick can produce). Full Sync also has to
+                // catch non-blank → different-non-blank, so it captures the
+                // current TN of every non-received package.
+                val snapshot: Map<Long, String> = withContext(Dispatchers.IO) {
+                    runCatching {
+                        when (mode) {
+                            AliImportMode.Quick ->
+                                repository.getBlankTrackingPackageIds()
+                                    .associateWith { "" }
+                            AliImportMode.FullSync ->
+                                repository.getNonReceivedTrackingSnapshot()
+                        }
+                    }.getOrDefault(emptyMap())
                 }
 
                 // Phase 3 — chain a background AliExpress import. HomeScreen
@@ -331,6 +427,7 @@ class HomeViewModel @Inject constructor(
                 // user isn't logged in; otherwise it injects ali_import.js
                 // and our bridge handler walks the order list. Any of the
                 // on*() callbacks settles the deferred and releases us here.
+                bgImportMode = mode
                 val deferred = CompletableDeferred<BgImportOutcome>()
                 bgImportOutcome = deferred
                 _bgImportActive.value = true
@@ -339,15 +436,18 @@ class HomeViewModel @Inject constructor(
                 _bgImportActive.value = false
                 bgImportOutcome = null
 
-                // Phase 4 — only if the import actually completed: refresh the
-                // snapshot ids whose tracking is now non-blank. Skips packages
-                // that still have no tracking and the ones we never had a
-                // chance to enrich (skipped / aborted import).
-                if (outcome == BgImportOutcome.Completed && blankIds.isNotEmpty()) {
+                // Phase 4 — only if the import actually completed: refresh
+                // each snapshot id whose tracking number changed during the
+                // import. Quick mode captured "" for everyone, so any
+                // non-blank value in the DB now is a "blank → set" change.
+                // Full Sync compares against the real prior TN, so it picks
+                // up both blank → set AND set → different-set.
+                if (outcome == BgImportOutcome.Completed && snapshot.isNotEmpty()) {
                     val tns = withContext(Dispatchers.IO) {
-                        blankIds.mapNotNull { id ->
-                            repository.getPackageById(id)?.trackingNumber
-                                ?.takeIf { it.isNotBlank() }
+                        snapshot.entries.mapNotNull { (id, prevTn) ->
+                            val current = repository.getPackageById(id)?.trackingNumber
+                                .orEmpty()
+                            current.takeIf { it.isNotBlank() && it != prevTn }
                         }.distinct()
                     }
                     tns.forEach { tn ->
@@ -366,6 +466,11 @@ class HomeViewModel @Inject constructor(
     }
 
     fun clearError() { _errorMessage.value = null }
+
+    override fun onCleared() {
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(processLifecycleObserver)
+        super.onCleared()
+    }
 
     private companion object {
         // Hard cap so a hung WebView (network black-hole, AliExpress redirect

@@ -1,6 +1,7 @@
 package com.michlind.packagetracker.domain.usecase
 
 import android.util.Log
+import com.michlind.packagetracker.domain.model.AliImportMode
 import com.michlind.packagetracker.domain.model.AliOrderImport
 import com.michlind.packagetracker.domain.model.ImportResult
 import com.michlind.packagetracker.domain.model.PackageStatus
@@ -27,7 +28,10 @@ class ImportAliOrderUseCase @Inject constructor(
     private val repository: PackageRepository,
     private val imageDownloader: RemoteImageDownloader
 ) {
-    suspend operator fun invoke(order: AliOrderImport): ImportResult {
+    suspend operator fun invoke(
+        order: AliOrderImport,
+        mode: AliImportMode = AliImportMode.Quick
+    ): ImportResult {
         val externalId = "ali:${order.orderId}"
         val existing = repository.getByExternalOrderId(externalId)
         val tn = order.trackingNumber?.trim().orEmpty()
@@ -102,16 +106,42 @@ class ImportAliOrderUseCase @Inject constructor(
                         reasons += "received"
                     }
 
-                    val gotTn = existing.trackingNumber.isBlank() && tn.isNotBlank()
-                    if (gotTn) {
+                    // Tracking-number write rules:
+                    //  - Quick mode: only ever fill in a blank one (current
+                    //    behavior — never trample an existing value).
+                    //  - Full Sync mode: also overwrite a non-blank TN if
+                    //    AliExpress now reports a different value, but only
+                    //    for orders that still carry an `ali:`-prefixed
+                    //    externalOrderId. The user's manual edits clear that
+                    //    prefix in AddEditViewModel.save(), so this path
+                    //    never touches anything the user typed by hand.
+                    val isAliOwned = (existing.externalOrderId ?: "")
+                        .startsWith("ali:")
+                    val incomingDiffers = tn.isNotBlank() &&
+                        tn != existing.trackingNumber
+                    val wasBlank = existing.trackingNumber.isBlank()
+                    val shouldUpdateTn = incomingDiffers && (
+                        wasBlank ||
+                        (mode == AliImportMode.FullSync && isAliOwned)
+                    )
+                    val tnChanged = shouldUpdateTn && !wasBlank
+                    if (shouldUpdateTn) {
                         updated = updated.copy(
                             trackingNumber = tn,
                             // don't downgrade DELIVERED above
                             status = if (updated.status == PackageStatus.DELIVERED) updated.status
-                                     else PackageStatus.ORDER_PLACED
+                                     else PackageStatus.ORDER_PLACED,
+                            // Existing events belong to the old TN — wipe
+                            // them when the TN changes so the follow-up
+                            // refreshPackage() repopulates with the new
+                            // carrier history. Blank → non-blank: nothing
+                            // to wipe (events were already empty).
+                            lastEvent = if (tnChanged) null else updated.lastEvent,
+                            events = if (tnChanged) emptyList() else updated.events
                         )
-                        reasons += "got tn"
+                        reasons += if (wasBlank) "got tn" else "tn changed"
                     }
+                    val gotTn = shouldUpdateTn
 
                     if (existing.name.isBlank() && order.name.isNotBlank()) {
                         updated = updated.copy(name = order.name)

@@ -28,8 +28,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -133,6 +136,10 @@ fun HomeScreen(
     var actionMenuPkg by remember { mutableStateOf<TrackedPackage?>(null) }
     // Picker shown when the FAB is tapped: choose auto-import vs. manual add.
     var showAddOptions by remember { mutableStateOf(false) }
+    // Picker shown when the Refresh icon is tapped: choose between just
+    // syncing carrier status, a quick AliExpress fetch + sync, or a full
+    // re-scan + sync.
+    var showRefreshOptions by remember { mutableStateOf(false) }
     // Delete-confirmation state, shown only after the user picks "Delete" from the menu
     var pendingDeleteGroup by remember { mutableStateOf<PackageGroup?>(null) }
     var pendingDeletePkg by remember { mutableStateOf<TrackedPackage?>(null) }
@@ -149,13 +156,14 @@ fun HomeScreen(
     }
 
     // Triggered when the user finishes an AliExpress import — switch to the
-    // In Transit tab and refresh tracking statuses for the newly-imported
-    // items. Skip the bg-import chain here — the user just ran a full import
-    // explicitly, no point silently doing it again.
+    // In Transit tab and run a full fetch + status sync. The manual import
+    // already picked up new orders in Quick mode; the chained fullFetch
+    // catches any tracking-number changes on already-imported orders, and
+    // syncStatus then refreshes carrier-side state for everything tracked.
     LaunchedEffect(refreshAndShowInTransit) {
         if (refreshAndShowInTransit) {
             pagerState.animateScrollToPage(1)
-            viewModel.refreshAll(runBgImport = false)
+            viewModel.fullFetchThenSyncStatus()
             onRefreshConsumed()
         }
     }
@@ -331,13 +339,57 @@ fun HomeScreen(
         }
     }
 
+    if (showRefreshOptions) {
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { showRefreshOptions = false },
+            sheetState = sheetState
+        ) {
+            Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                Text(
+                    text = "Refresh",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                BottomSheetActionRow(
+                    icon = Icons.Default.Sync,
+                    title = "Sync tracking status",
+                    subtitle = "Update delivery progress for tracked packages",
+                    onClick = {
+                        showRefreshOptions = false
+                        viewModel.syncStatus()
+                    }
+                )
+                BottomSheetActionRow(
+                    icon = Icons.Default.Bolt,
+                    title = "Quick",
+                    subtitle = "Pull new AliExpress orders, then sync status",
+                    onClick = {
+                        showRefreshOptions = false
+                        viewModel.quickFetchThenSyncStatus()
+                    }
+                )
+                BottomSheetActionRow(
+                    icon = Icons.Default.CloudSync,
+                    title = "Full",
+                    subtitle = "Re-scan every AliExpress order, then sync status",
+                    onClick = {
+                        showRefreshOptions = false
+                        viewModel.fullFetchThenSyncStatus()
+                    }
+                )
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
                     IconButton(
-                        onClick = { if (!isRefreshing) viewModel.refreshAll() },
+                        onClick = { if (!isRefreshing) showRefreshOptions = true },
                         enabled = !isRefreshing
                     ) {
                         if (isRefreshing) {
