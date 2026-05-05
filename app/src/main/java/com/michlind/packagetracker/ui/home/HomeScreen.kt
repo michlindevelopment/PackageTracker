@@ -364,7 +364,7 @@ fun HomeScreen(
                 BottomSheetActionRow(
                     icon = Icons.Default.Bolt,
                     title = "Quick",
-                    subtitle = "Pull new AliExpress orders, then sync status",
+                    subtitle = "Pull new AliExpress orders",
                     onClick = {
                         showRefreshOptions = false
                         viewModel.quickFetchThenSyncStatus()
@@ -373,7 +373,8 @@ fun HomeScreen(
                 BottomSheetActionRow(
                     icon = Icons.Default.CloudSync,
                     title = "Full",
-                    subtitle = "Re-scan every AliExpress order, then sync status",
+                    subtitle = "Re-scan every order — catches tracking numbers " +
+                        "that AliExpress changed after shipping",
                     onClick = {
                         showRefreshOptions = false
                         viewModel.fullFetchThenSyncStatus()
