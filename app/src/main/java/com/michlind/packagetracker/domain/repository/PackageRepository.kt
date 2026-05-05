@@ -49,4 +49,12 @@ interface PackageRepository {
      * non-blank → different non-blank).
      */
     suspend fun getNonReceivedTrackingSnapshot(): Map<Long, String>
+
+    /**
+     * Any one existing package that already shares this tracking number, or
+     * null if none. Used when adding a new package that's joining a
+     * multi-group, so it can inherit the group's tracking events instead
+     * of starting with an empty timeline.
+     */
+    suspend fun getFirstByTrackingNumber(trackingNumber: String): TrackedPackage?
 }

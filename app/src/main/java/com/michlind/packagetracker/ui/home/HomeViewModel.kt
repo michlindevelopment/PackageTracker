@@ -9,6 +9,7 @@ import com.google.gson.Gson
 import com.michlind.packagetracker.data.preferences.AliImportPreferenceRepository
 import com.michlind.packagetracker.data.preferences.SortPreferenceRepository
 import com.michlind.packagetracker.data.preferences.SyncOnResumePreferenceRepository
+import com.michlind.packagetracker.di.CainiaoRateLimitException
 import com.michlind.packagetracker.domain.model.AliImportMode
 import com.michlind.packagetracker.domain.model.AliOrderImport
 import com.michlind.packagetracker.domain.model.ImportResult
@@ -451,13 +452,9 @@ class HomeViewModel @Inject constructor(
                                 .map { it.trackingNumber }
                         }.getOrDefault(emptyList())
                     }
-                    eligibleTns
-                        .filter { it.isNotBlank() }
-                        .distinct()
-                        .forEach { tn ->
-                            _refreshingTrackingNumber.value = tn
-                            refreshTrackingNumber(tn)
-                        }
+                    refreshTnsRateLimited(
+                        eligibleTns.filter { it.isNotBlank() }.distinct()
+                    )
                     _refreshingTrackingNumber.value = null
                 }
 
@@ -511,10 +508,7 @@ class HomeViewModel @Inject constructor(
                             current.takeIf { it.isNotBlank() && it != prevTn }
                         }.distinct()
                     }
-                    tns.forEach { tn ->
-                        _refreshingTrackingNumber.value = tn
-                        refreshTrackingNumber(tn)
-                    }
+                    refreshTnsRateLimited(tns)
                 }
             } catch (_: Exception) {
                 _errorMessage.value = "Failed to refresh packages"
@@ -523,6 +517,31 @@ class HomeViewModel @Inject constructor(
                 _isRefreshing.value = false
                 _bgImportActive.value = false
                 _bgImportProgress.value = null
+            }
+        }
+    }
+
+    /**
+     * Iterates [tns], calling refreshTrackingNumber for each with a small
+     * gap between calls so we don't trip Cainiao's bot detection (which
+     * starts replying with a CAPTCHA HTML page tagged `bxpunish: 1` once
+     * we hit the endpoint too quickly). If a CainiaoRateLimitException
+     * does come back mid-loop, bail immediately — every subsequent request
+     * would just hit the same wall — and surface a snackbar so the user
+     * understands why sync stopped.
+     */
+    private suspend fun refreshTnsRateLimited(tns: List<String>) {
+        var first = true
+        for (tn in tns) {
+            if (!first) delay(REFRESH_INTER_REQUEST_MS)
+            first = false
+            _refreshingTrackingNumber.value = tn
+            val result = refreshTrackingNumber(tn)
+            val ex = result.exceptionOrNull()
+            if (ex is CainiaoRateLimitException) {
+                _errorMessage.value = "Tracking sync paused — Cainiao is " +
+                    "temporarily blocking requests. Try again in a few minutes."
+                return
             }
         }
     }
@@ -539,5 +558,11 @@ class HomeViewModel @Inject constructor(
         // loop, etc.) can't pin isRefreshing forever. Manual imports with
         // default page budgets (20/20/1) typically finish well under this.
         const val BG_IMPORT_TIMEOUT_MS = 30L * 60L * 1000L
+
+        // Gap between successive Cainiao tracking lookups. Cainiao's
+        // anti-bot ("baxia") flips us to CAPTCHA mode if we fire requests
+        // too quickly back-to-back; ~750 ms keeps us well under that
+        // threshold while still finishing 20 packages in ~15 s.
+        const val REFRESH_INTER_REQUEST_MS = 750L
     }
 }

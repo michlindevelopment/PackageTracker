@@ -53,30 +53,53 @@ class ImportAliOrderUseCase @Inject constructor(
                     val localPhoto = order.imageUrl?.let {
                         imageDownloader.download(it, fileBaseName = order.orderId)
                     }
+
+                    // If a row with this tracking number already exists, this
+                    // new order is joining an existing multi-group (multiple
+                    // AliExpress orders shipping under one TN). Inherit the
+                    // group's tracking events / delivery metadata so the new
+                    // row renders the same shipping progress as its siblings
+                    // — otherwise the AliExpress-completed and ready-to-ship
+                    // paths skip the Cainiao refresh below and we'd ship an
+                    // empty timeline. Doesn't matter which sibling we pick;
+                    // they all share the same TN-derived data after a refresh.
+                    val sibling = if (tn.isNotBlank()) {
+                        repository.getFirstByTrackingNumber(tn)
+                    } else null
+
                     // ORDER_PLACED requires a tracking number — without one we'd
                     // have nothing to refresh against Cainiao. If the iframe scrape
                     // failed on a shipped order, park it as NOT_YET_SENT; the
                     // upgrade path below will promote it once a re-import succeeds.
-                    val status = when {
+                    val baseStatus = when {
                         received -> PackageStatus.DELIVERED
                         notYetShipped || tn.isBlank() -> PackageStatus.NOT_YET_SENT
                         else -> PackageStatus.ORDER_PLACED
                     }
+                    // Trust AliExpress for the boundary states (received /
+                    // not yet sent); for anything in between, defer to the
+                    // sibling's carrier-derived status so the multi-group's
+                    // StatusBadge stays consistent.
+                    val status = if (sibling != null && !received && !notYetShipped) {
+                        sibling.status
+                    } else baseStatus
+
                     val pkg = TrackedPackage(
                         trackingNumber = tn,
                         name = order.name,
                         photoUri = localPhoto,
                         status = status,
-                        statusDescription = order.statusText.orEmpty(),
-                        lastEvent = null,
-                        events = emptyList(),
-                        lastUpdated = 0L,
+                        statusDescription = sibling?.statusDescription
+                            ?: order.statusText.orEmpty(),
+                        lastEvent = sibling?.lastEvent,
+                        events = sibling?.events ?: emptyList(),
+                        lastUpdated = sibling?.lastUpdated ?: 0L,
                         isReceived = received,
                         createdAt = order.orderCreatedAt,
-                        estimatedDeliveryTime = null,
-                        daysInTransit = null,
-                        originCountry = null,
-                        destCountry = null,
+                        estimatedDeliveryTime = sibling?.estimatedDeliveryTime,
+                        daysInTransit = sibling?.daysInTransit,
+                        originCountry = sibling?.originCountry,
+                        destCountry = sibling?.destCountry,
                         externalOrderId = externalId
                     )
                     val newId = repository.addPackage(pkg)
@@ -85,7 +108,11 @@ class ImportAliOrderUseCase @Inject constructor(
                     if (tn.isNotBlank() && !notYetShipped && !received) {
                         repository.refreshPackage(newId)
                     }
-                    Log.d(TAG, "  -> ADDED id=$newId status=$status received=$received")
+                    Log.d(
+                        TAG,
+                        "  -> ADDED id=$newId status=$status received=$received " +
+                            "sibling=${sibling != null}"
+                    )
                     ImportResult.ADDED
                 }
 

@@ -134,6 +134,9 @@ class PackageRepositoryImpl @Inject constructor(
     override suspend fun getNonReceivedTrackingSnapshot(): Map<Long, String> =
         dao.getNonReceivedTrackingSnapshot().associate { it.id to it.trackingNumber }
 
+    override suspend fun getFirstByTrackingNumber(trackingNumber: String): TrackedPackage? =
+        dao.getByTrackingNumber(trackingNumber).firstOrNull()?.toDomain()
+
     override suspend fun refreshTrackingNumber(trackingNumber: String): Result<Map<Long, Boolean>> {
         val existingRows = dao.getByTrackingNumber(trackingNumber)
         if (existingRows.isEmpty()) return Result.failure(Exception("Package not found"))
