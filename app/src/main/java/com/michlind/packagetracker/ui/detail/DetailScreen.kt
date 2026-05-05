@@ -393,10 +393,16 @@ private fun DetailContent(
         } else {
             items(pkg.events.indices.toList()) { index ->
                 val event = pkg.events[index]
+                // Events are reverse-chronological (newest at index 0), so
+                // the *next* chronological step for events[i] is the row
+                // above it: events[i - 1]. Top of the list has no next step.
+                val nextEventTime = if (index == 0) null
+                    else pkg.events[index - 1].time
                 TimelineItem(
                     event = event,
                     isFirst = index == 0,
                     isLast = index == pkg.events.lastIndex,
+                    nextEventTime = nextEventTime,
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
             }

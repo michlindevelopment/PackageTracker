@@ -81,7 +81,9 @@ class PackageRepositoryImpl @Inject constructor(
                     description = trace.desc.orEmpty(),
                     standardDescription = trace.standerdDesc.orEmpty(),
                     actionCode = trace.actionCode.orEmpty(),
-                    groupDescription = trace.group?.nodeDesc
+                    groupDescription = trace.group?.nodeDesc,
+                    groupCurrentIconUrl = trace.group?.currentIconUrl,
+                    groupHistoryIconUrl = trace.group?.historyIconUrl
                 )
             } ?: emptyList()
 

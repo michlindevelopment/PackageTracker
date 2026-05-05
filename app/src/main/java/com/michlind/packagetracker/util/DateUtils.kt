@@ -34,4 +34,19 @@ object DateUtils {
         val diff = epochMs - System.currentTimeMillis()
         return TimeUnit.MILLISECONDS.toDays(diff)
     }
+
+    /**
+     * Compact duration string for "time spent in this status" labels.
+     * Picks the largest non-zero unit (days → hours → minutes) so the
+     * label is always one short token like "3d", "5h", "12m".
+     */
+    fun formatDuration(ms: Long): String {
+        if (ms <= 0L) return "0m"
+        val days = TimeUnit.MILLISECONDS.toDays(ms)
+        if (days >= 1) return "${days}d"
+        val hours = TimeUnit.MILLISECONDS.toHours(ms)
+        if (hours >= 1) return "${hours}h"
+        val minutes = TimeUnit.MILLISECONDS.toMinutes(ms)
+        return "${minutes.coerceAtLeast(1)}m"
+    }
 }
