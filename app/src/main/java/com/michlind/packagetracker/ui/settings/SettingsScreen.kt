@@ -50,6 +50,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -616,9 +617,9 @@ private fun ImportBudgetSheet(
     onDismiss: () -> Unit,
     onConfirm: (toShip: Int, shipped: Int, processed: Int) -> Unit
 ) {
-    var toShip by remember(initialToShip) { mutableStateOf(initialToShip) }
-    var shipped by remember(initialShipped) { mutableStateOf(initialShipped) }
-    var processed by remember(initialProcessed) { mutableStateOf(initialProcessed) }
+    var toShip by remember(initialToShip) { mutableIntStateOf(initialToShip) }
+    var shipped by remember(initialShipped) { mutableIntStateOf(initialShipped) }
+    var processed by remember(initialProcessed) { mutableIntStateOf(initialProcessed) }
     val sheetState = rememberModalBottomSheetState()
     ModalBottomSheet(
         onDismissRequest = onDismiss,

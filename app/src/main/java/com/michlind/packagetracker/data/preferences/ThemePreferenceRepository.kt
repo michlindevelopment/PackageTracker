@@ -2,6 +2,7 @@ package com.michlind.packagetracker.data.preferences
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import com.michlind.packagetracker.domain.model.ThemePreference
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +22,7 @@ class ThemePreferenceRepository @Inject constructor(
     val theme: StateFlow<ThemePreference> = _theme.asStateFlow()
 
     fun setTheme(value: ThemePreference) {
-        prefs.edit().putString(KEY_THEME, value.name).apply()
+        prefs.edit { putString(KEY_THEME, value.name) }
         _theme.value = value
     }
 

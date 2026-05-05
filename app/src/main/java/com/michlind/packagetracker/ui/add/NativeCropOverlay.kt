@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.graphics.scale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -71,9 +73,9 @@ fun NativeCropOverlay(
         if (bitmap == null) onDismiss()
     }
 
-    var userScale by remember { mutableStateOf(1f) }
-    var userOffsetX by remember { mutableStateOf(0f) }
-    var userOffsetY by remember { mutableStateOf(0f) }
+    var userScale by remember { mutableFloatStateOf(1f) }
+    var userOffsetX by remember { mutableFloatStateOf(0f) }
+    var userOffsetY by remember { mutableFloatStateOf(0f) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -191,7 +193,7 @@ private fun cropAndSave(
     val sq = minOf(srcW, srcH)
 
     val cropped = Bitmap.createBitmap(src, srcX, srcY, sq, sq)
-    val output = if (sq > 1024) Bitmap.createScaledBitmap(cropped, 1024, 1024, true) else cropped
+    val output = if (sq > 1024) cropped.scale(1024, 1024) else cropped
 
     val file = File(context.cacheDir, "crop_${System.currentTimeMillis()}.jpg")
     file.outputStream().use { output.compress(Bitmap.CompressFormat.JPEG, 90, it) }

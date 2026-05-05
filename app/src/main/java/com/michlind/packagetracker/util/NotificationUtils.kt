@@ -9,12 +9,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import com.michlind.packagetracker.MainActivity
 import com.michlind.packagetracker.R
 
@@ -116,7 +116,7 @@ object NotificationUtils {
             if (photoUri.startsWith("/")) {
                 BitmapFactory.decodeFile(photoUri)
             } else {
-                val uri = Uri.parse(photoUri)
+                val uri = photoUri.toUri()
                 if (uri.scheme == "file") {
                     BitmapFactory.decodeFile(uri.path)
                 } else {

@@ -2,6 +2,7 @@ package com.michlind.packagetracker.data.preferences
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,7 @@ class SyncOnResumePreferenceRepository @Inject constructor(
     val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
 
     fun setEnabled(value: Boolean) {
-        prefs.edit().putBoolean(KEY_ENABLED, value).apply()
+        prefs.edit { putBoolean(KEY_ENABLED, value) }
         _enabled.value = value
     }
 
