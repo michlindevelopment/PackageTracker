@@ -146,14 +146,14 @@ fun HomeScreen(
     }
 
     // Triggered when the user finishes an AliExpress import — switch to the
-    // In Transit tab and run a full fetch + status sync. The manual import
-    // already picked up new orders in Quick mode; the chained fullFetch
-    // catches any tracking-number changes on already-imported orders, and
-    // syncStatus then refreshes carrier-side state for everything tracked.
+    // In Transit tab and pull fresh Cainiao events. The manual import itself
+    // runs in FullSync mode (visible scrape covers new orders AND tracking-
+    // number changes for existing ones), so all that's left here is a
+    // carrier status pass — no second AliExpress scrape needed.
     LaunchedEffect(refreshAndShowInTransit) {
         if (refreshAndShowInTransit) {
             pagerState.animateScrollToPage(1)
-            viewModel.fullFetchThenSyncStatus()
+            viewModel.syncStatus()
             onRefreshConsumed()
         }
     }
