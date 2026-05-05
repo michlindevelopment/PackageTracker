@@ -2,17 +2,14 @@ package com.michlind.packagetracker.ui.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,34 +37,28 @@ import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.RichTooltip
-import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -100,7 +91,6 @@ import com.michlind.packagetracker.ui.components.EmptyState
 import com.michlind.packagetracker.ui.components.PackageCard
 import com.michlind.packagetracker.ui.components.StatusBadge
 import com.michlind.packagetracker.ui.components.colorAndIcon
-import com.michlind.packagetracker.util.DateUtils
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -183,7 +173,7 @@ fun HomeScreen(
             ?: stringResource(R.string.add_package)
         val sheetState = rememberModalBottomSheetState()
         ModalBottomSheet(
-            onDismissRequest = { actionMenuGroup = null; actionMenuPkg = null },
+            onDismissRequest = { },
             sheetState = sheetState
         ) {
             Column(modifier = Modifier.padding(bottom = 24.dp)) {
@@ -237,7 +227,7 @@ fun HomeScreen(
         val msgRes = if (newState) R.string.confirm_mark_received_message
                      else R.string.confirm_mark_not_received_message
         AlertDialog(
-            onDismissRequest = { pendingToggleGroup = null; pendingTogglePkg = null },
+            onDismissRequest = { },
             title = { Text(stringResource(titleRes)) },
             text = { Text(stringResource(msgRes)) },
             confirmButton = {
@@ -255,8 +245,6 @@ fun HomeScreen(
             },
             dismissButton = {
                 TextButton(onClick = {
-                    pendingToggleGroup = null
-                    pendingTogglePkg = null
                 }) {
                     Text(stringResource(R.string.cancel))
                 }
@@ -270,7 +258,7 @@ fun HomeScreen(
         val deletedMsg = if (count > 1) "$count packages deleted" else stringResource(R.string.package_deleted)
         val undoLabel = stringResource(R.string.undo)
         AlertDialog(
-            onDismissRequest = { pendingDeleteGroup = null; pendingDeletePkg = null },
+            onDismissRequest = { },
             title = { Text(if (count > 1) "Delete $count packages?" else "Delete package?") },
             text = { Text(stringResource(R.string.confirm_delete_message)) },
             confirmButton = {
@@ -331,7 +319,6 @@ fun HomeScreen(
                     title = "Add manually",
                     subtitle = "Enter a tracking number yourself",
                     onClick = {
-                        showAddOptions = false
                         onAddClick()
                     }
                 )
