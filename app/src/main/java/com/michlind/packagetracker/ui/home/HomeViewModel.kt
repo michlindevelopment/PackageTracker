@@ -8,8 +8,10 @@ import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.michlind.packagetracker.data.preferences.AliImportPreferenceRepository
 import com.michlind.packagetracker.data.preferences.SortPreferenceRepository
+import com.michlind.packagetracker.data.preferences.SyncOnResumePreferenceRepository
 import com.michlind.packagetracker.domain.model.AliImportMode
 import com.michlind.packagetracker.domain.model.AliOrderImport
+import com.michlind.packagetracker.domain.model.ImportResult
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.SortMode
 import com.michlind.packagetracker.domain.model.TrackedPackage
@@ -105,6 +107,22 @@ private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup
 
 private enum class BgImportOutcome { Completed, Skipped, Aborted }
 
+/**
+ * Live progress of the in-flight background AliExpress import. Mirrors what
+ * the manual AliImportScreen overlay shows so the user gets the same
+ * "loading orders / loading 'To ship' / N of M imported" feedback when they
+ * trigger Quick or Full from the Refresh sheet.
+ */
+data class BgImportProgress(
+    val statusText: String,
+    val total: Int? = null,
+    val current: Int = 0,
+    val added: Int = 0,
+    val upgraded: Int = 0,
+    val skipped: Int = 0,
+    val failed: Int = 0
+)
+
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     getActivePackages: GetActivePackagesUseCase,
@@ -119,6 +137,7 @@ class HomeViewModel @Inject constructor(
     private val repository: PackageRepository,
     private val importOrder: ImportAliOrderUseCase,
     private val importPrefs: AliImportPreferenceRepository,
+    private val syncOnResumePrefs: SyncOnResumePreferenceRepository,
     private val gson: Gson
 ) : ViewModel() {
 
@@ -167,6 +186,12 @@ class HomeViewModel @Inject constructor(
     private val _bgImportActive = MutableStateFlow(false)
     val bgImportActive: StateFlow<Boolean> = _bgImportActive.asStateFlow()
 
+    // Live progress feed for the bg AliExpress import (Quick / Full from
+    // the Refresh sheet). Null when no import is in flight; populated and
+    // updated in real time while one is.
+    private val _bgImportProgress = MutableStateFlow<BgImportProgress?>(null)
+    val bgImportProgress: StateFlow<BgImportProgress?> = _bgImportProgress.asStateFlow()
+
     private val bgEventChannel = Channel<AliImportEvent>(Channel.UNLIMITED)
     val bgBridge = AliImportBridge { event -> bgEventChannel.trySend(event) }
 
@@ -192,7 +217,11 @@ class HomeViewModel @Inject constructor(
     // which is exactly what we want for the initial sync.
     private val processLifecycleObserver = object : DefaultLifecycleObserver {
         override fun onStart(owner: LifecycleOwner) {
-            syncStatus()
+            // Honor the user's "sync on app resume" setting — off means the
+            // user wants explicit control via the Refresh sheet only.
+            if (syncOnResumePrefs.enabled.value) {
+                syncStatus()
+            }
         }
     }
 
@@ -202,6 +231,18 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             bgEventChannel.consumeAsFlow().collect { event ->
                 when (event) {
+                    is AliImportEvent.Progress -> {
+                        // "Loading orders…" / "Loading 'To ship' orders…"
+                        // status text from the JS, mirrored to the banner.
+                        _bgImportProgress.value = _bgImportProgress.value
+                            ?.copy(statusText = event.message)
+                    }
+                    is AliImportEvent.Total -> {
+                        _bgImportProgress.value = _bgImportProgress.value?.copy(
+                            total = event.total,
+                            statusText = "Found ${event.total} orders"
+                        )
+                    }
                     is AliImportEvent.Order -> {
                         // Same path as the manual import: parse the JSON and
                         // run it through the use case (which handles ADD /
@@ -209,11 +250,22 @@ class HomeViewModel @Inject constructor(
                         // tracked items inline). Mode controls whether an
                         // already-imported order's TN can be overwritten.
                         val mode = bgImportMode
-                        withContext(Dispatchers.IO) {
+                        val result = withContext(Dispatchers.IO) {
                             runCatching {
                                 val order = gson.fromJson(event.json, AliOrderImport::class.java)
                                 importOrder(order, mode)
-                            }
+                            }.getOrElse { ImportResult.FAILED }
+                        }
+                        _bgImportProgress.value = _bgImportProgress.value?.let { p ->
+                            p.copy(
+                                current = event.index,
+                                total = event.total,
+                                statusText = "Importing ${event.index} / ${event.total}",
+                                added = p.added + if (result == ImportResult.ADDED) 1 else 0,
+                                upgraded = p.upgraded + if (result == ImportResult.UPGRADED) 1 else 0,
+                                skipped = p.skipped + if (result == ImportResult.SKIPPED) 1 else 0,
+                                failed = p.failed + if (result == ImportResult.FAILED) 1 else 0
+                            )
                         }
                     }
                     is AliImportEvent.Complete -> {
@@ -222,8 +274,6 @@ class HomeViewModel @Inject constructor(
                     is AliImportEvent.Error -> {
                         bgImportOutcome?.complete(BgImportOutcome.Aborted)
                     }
-                    // Progress / Total are noise in bg mode — no UI to update.
-                    else -> Unit
                 }
             }
         }
@@ -388,11 +438,20 @@ class HomeViewModel @Inject constructor(
                 // skip it because their interesting work is the AliExpress
                 // pull plus a targeted post-import refresh.
                 if (runStatusSync) {
-                    val activeTns = activeGroups.value.map { it.trackingNumber }
-                    val receivedTns = receivedGroups.value
-                        .filter { g -> g.packages.any { it.status != PackageStatus.DELIVERED } }
-                        .map { it.trackingNumber }
-                    (activeTns + receivedTns)
+                    // Query the DB directly rather than reading from
+                    // activeGroups.value / receivedGroups.value — on cold
+                    // start the StateFlows are still emitting their initial
+                    // empty list at the moment ProcessLifecycle ON_START
+                    // fires, which would silently make syncStatus a no-op.
+                    // getPackagesEligibleForRefresh covers both active and
+                    // marked-received-but-not-yet-DELIVERED rows.
+                    val eligibleTns = withContext(Dispatchers.IO) {
+                        runCatching {
+                            repository.getPackagesEligibleForRefresh()
+                                .map { it.trackingNumber }
+                        }.getOrDefault(emptyList())
+                    }
+                    eligibleTns
                         .filter { it.isNotBlank() }
                         .distinct()
                         .forEach { tn ->
@@ -428,6 +487,7 @@ class HomeViewModel @Inject constructor(
                 // and our bridge handler walks the order list. Any of the
                 // on*() callbacks settles the deferred and releases us here.
                 bgImportMode = mode
+                _bgImportProgress.value = BgImportProgress(statusText = "Starting…")
                 val deferred = CompletableDeferred<BgImportOutcome>()
                 bgImportOutcome = deferred
                 _bgImportActive.value = true
@@ -435,6 +495,7 @@ class HomeViewModel @Inject constructor(
                     ?: BgImportOutcome.Aborted
                 _bgImportActive.value = false
                 bgImportOutcome = null
+                _bgImportProgress.value = null
 
                 // Phase 4 — only if the import actually completed: refresh
                 // each snapshot id whose tracking number changed during the
@@ -461,6 +522,7 @@ class HomeViewModel @Inject constructor(
                 _refreshingTrackingNumber.value = null
                 _isRefreshing.value = false
                 _bgImportActive.value = false
+                _bgImportProgress.value = null
             }
         }
     }

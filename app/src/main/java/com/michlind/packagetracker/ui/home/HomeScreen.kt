@@ -46,6 +46,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.PrimaryTabRow
@@ -112,6 +113,7 @@ fun HomeScreen(
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
     val bgImportActive by viewModel.bgImportActive.collectAsStateWithLifecycle()
+    val bgImportProgress by viewModel.bgImportProgress.collectAsStateWithLifecycle()
     var sortMenuOpen by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -461,6 +463,8 @@ fun HomeScreen(
                     text = { Text(stringResource(R.string.tab_received)) }
                 )
             }
+
+            bgImportProgress?.let { progress -> BgImportProgressBanner(progress) }
 
             HorizontalPager(
                 state = pagerState,
@@ -822,6 +826,72 @@ private fun BottomSheetActionRow(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
             )
         }
+    }
+}
+
+// Banner shown under the tab row while a Quick / Full sync's AliExpress
+// scrape is in progress. Mirrors the manual import overlay's content
+// (status text, progress bar, added/upgraded/skipped/failed counters) so
+// the user gets the same feedback in the home flow.
+@Composable
+private fun BgImportProgressBanner(progress: BgImportProgress) {
+    androidx.compose.material3.Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 2.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = progress.statusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            val total = progress.total
+            if (total != null && total > 0) {
+                LinearProgressIndicator(
+                    progress = { (progress.current.toFloat() / total).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            if (progress.added + progress.upgraded + progress.skipped + progress.failed > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
+                ) {
+                    BgImportCounter("Added", progress.added, MaterialTheme.colorScheme.primary)
+                    BgImportCounter("Upgraded", progress.upgraded, MaterialTheme.colorScheme.tertiary)
+                    BgImportCounter("Skipped", progress.skipped, MaterialTheme.colorScheme.onSurfaceVariant)
+                    BgImportCounter("Failed", progress.failed, MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BgImportCounter(label: String, value: Int, color: androidx.compose.ui.graphics.Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall)
+        Text(
+            value.toString(),
+            style = MaterialTheme.typography.titleSmall,
+            color = color,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 

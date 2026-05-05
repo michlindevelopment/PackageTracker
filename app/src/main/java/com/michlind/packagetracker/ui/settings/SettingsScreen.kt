@@ -78,6 +78,7 @@ fun SettingsScreen(
     val shippedPages by viewModel.shippedPages.collectAsStateWithLifecycle()
     val processedPages by viewModel.processedPages.collectAsStateWithLifecycle()
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsStateWithLifecycle()
+    val syncOnResumeEnabled by viewModel.syncOnResumeEnabled.collectAsStateWithLifecycle()
     var showBudgetSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     var showDisconnectDialog by remember { mutableStateOf(false) }
@@ -229,6 +230,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                     )
                 }
+                Spacer(Modifier.size(16.dp))
                 Switch(
                     checked = notificationsEnabled,
                     onCheckedChange = { viewModel.setNotificationsEnabled(it) }
@@ -243,6 +245,35 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.size(8.dp))
                 Text("Send test notification")
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            SectionTitle("Sync")
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Sync on app open",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Refresh delivery progress every time you open " +
+                            "the app or bring it back from the background.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                    )
+                }
+                Spacer(Modifier.size(16.dp))
+                Switch(
+                    checked = syncOnResumeEnabled,
+                    onCheckedChange = { viewModel.setSyncOnResumeEnabled(it) }
+                )
             }
 
             Spacer(Modifier.height(16.dp))
