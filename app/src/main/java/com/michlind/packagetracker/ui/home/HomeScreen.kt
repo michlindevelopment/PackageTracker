@@ -1,5 +1,11 @@
 package com.michlind.packagetracker.ui.home
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -464,7 +470,25 @@ fun HomeScreen(
                 )
             }
 
-            bgImportProgress?.let { progress -> BgImportProgressBanner(progress) }
+            // Cache the last non-null progress so the slide-out animation
+            // still has content to render after the chain clears the flow.
+            var lastProgress by remember { mutableStateOf<BgImportProgress?>(null) }
+            LaunchedEffect(bgImportProgress) {
+                bgImportProgress?.let { lastProgress = it }
+            }
+            AnimatedVisibility(
+                visible = bgImportProgress != null,
+                enter = expandVertically(
+                    expandFrom = Alignment.Top,
+                    animationSpec = tween(durationMillis = 240)
+                ) + fadeIn(animationSpec = tween(durationMillis = 240)),
+                exit = shrinkVertically(
+                    shrinkTowards = Alignment.Top,
+                    animationSpec = tween(durationMillis = 200)
+                ) + fadeOut(animationSpec = tween(durationMillis = 200))
+            ) {
+                lastProgress?.let { BgImportProgressBanner(it) }
+            }
 
             HorizontalPager(
                 state = pagerState,
@@ -840,6 +864,10 @@ private fun BgImportProgressBanner(progress: BgImportProgress) {
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 2.dp
     ) {
+        // Always render the same set of children — spinner+text, progress
+        // bar, counters — so the banner has a constant height regardless of
+        // which phase we're in. Indeterminate progress while total is
+        // unknown; counters show 0 until the first order completes.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -866,17 +894,17 @@ private fun BgImportProgressBanner(progress: BgImportProgress) {
                     progress = { (progress.current.toFloat() / total).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth()
                 )
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
-            if (progress.added + progress.upgraded + progress.skipped + progress.failed > 0) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
-                ) {
-                    BgImportCounter("Added", progress.added, MaterialTheme.colorScheme.primary)
-                    BgImportCounter("Upgraded", progress.upgraded, MaterialTheme.colorScheme.tertiary)
-                    BgImportCounter("Skipped", progress.skipped, MaterialTheme.colorScheme.onSurfaceVariant)
-                    BgImportCounter("Failed", progress.failed, MaterialTheme.colorScheme.error)
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
+            ) {
+                BgImportCounter("Added", progress.added, MaterialTheme.colorScheme.primary)
+                BgImportCounter("Upgraded", progress.upgraded, MaterialTheme.colorScheme.tertiary)
+                BgImportCounter("Skipped", progress.skipped, MaterialTheme.colorScheme.onSurfaceVariant)
+                BgImportCounter("Failed", progress.failed, MaterialTheme.colorScheme.error)
             }
         }
     }
