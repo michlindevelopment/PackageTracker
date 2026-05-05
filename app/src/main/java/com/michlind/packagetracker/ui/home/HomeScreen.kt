@@ -92,6 +92,7 @@ import coil.compose.AsyncImage
 import com.michlind.packagetracker.R
 import com.michlind.packagetracker.domain.model.SortMode
 import com.michlind.packagetracker.domain.model.TrackedPackage
+import com.michlind.packagetracker.ui.aliimport.BgAliImportWebView
 import com.michlind.packagetracker.ui.components.EmptyState
 import com.michlind.packagetracker.ui.components.PackageCard
 import com.michlind.packagetracker.ui.components.StatusBadge
@@ -117,6 +118,7 @@ fun HomeScreen(
     val refreshingTn by viewModel.refreshingTrackingNumber.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
+    val bgImportActive by viewModel.bgImportActive.collectAsStateWithLifecycle()
     var sortMenuOpen by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -147,11 +149,13 @@ fun HomeScreen(
     }
 
     // Triggered when the user finishes an AliExpress import — switch to the
-    // In Transit tab and refresh tracking statuses for the newly-imported items.
+    // In Transit tab and refresh tracking statuses for the newly-imported
+    // items. Skip the bg-import chain here — the user just ran a full import
+    // explicitly, no point silently doing it again.
     LaunchedEffect(refreshAndShowInTransit) {
         if (refreshAndShowInTransit) {
             pagerState.animateScrollToPage(1)
-            viewModel.refreshAll()
+            viewModel.refreshAll(runBgImport = false)
             onRefreshConsumed()
         }
     }
@@ -386,7 +390,20 @@ fun HomeScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
+        Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            // Sits behind the Column below — children added later in a Box
+            // are drawn on top, so the visible UI stays interactive while
+            // this 1×1 alpha-0 WebView quietly runs the import script.
+            if (bgImportActive) {
+                BgAliImportWebView(
+                    bridge = viewModel.bgBridge,
+                    onSkipped = viewModel::onBgImportSkipped,
+                    onError = viewModel::onBgImportError,
+                    onAborted = viewModel::onBgImportAborted,
+                    prepare = viewModel::prepareBgImport
+                )
+            }
+        Column(modifier = Modifier.fillMaxSize()) {
             PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
                 Tab(
                     selected = pagerState.currentPage == 0,
@@ -436,6 +453,7 @@ fun HomeScreen(
                     )
                 }
             }
+        }
         }
     }
 }

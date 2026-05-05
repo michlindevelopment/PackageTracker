@@ -4,7 +4,8 @@
       "Bash(*)",
       "Read(//tmp/**)",
       "WebFetch(domain:github.com)",
-      "WebSearch"
+      "WebSearch",
+      "PowerShell(.\\\\gradlew.bat assembleDebug --no-daemon 2>&1 | Select-Object -Last 60)"
     ]
   }
 }

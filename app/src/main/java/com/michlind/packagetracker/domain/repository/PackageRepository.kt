@@ -33,4 +33,12 @@ interface PackageRepository {
      * for orders we've already enriched.
      */
     suspend fun getImportedAliOrderIdsWithTracking(): Set<String>
+
+    /**
+     * IDs of non-received packages whose tracking number is blank. Used to
+     * snapshot which packages had no tracking before a background AliExpress
+     * import runs, so afterwards we can refresh only the ones that just got
+     * a tracking number.
+     */
+    suspend fun getBlankTrackingPackageIds(): List<Long>
 }

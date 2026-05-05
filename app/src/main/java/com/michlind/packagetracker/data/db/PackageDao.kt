@@ -46,6 +46,9 @@ interface PackageDao {
     @Query("SELECT externalOrderId FROM packages WHERE externalOrderId LIKE 'ali:%' AND trackingNumber != ''")
     suspend fun getAliExternalOrderIdsWithTracking(): List<String>
 
+    @Query("SELECT id FROM packages WHERE trackingNumber = '' AND isReceived = 0")
+    suspend fun getBlankTrackingPackageIds(): List<Long>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: PackageEntity): Long
 

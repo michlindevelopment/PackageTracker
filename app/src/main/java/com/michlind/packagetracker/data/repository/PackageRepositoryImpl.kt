@@ -128,6 +128,9 @@ class PackageRepositoryImpl @Inject constructor(
             .filter { it.isNotBlank() }
             .toSet()
 
+    override suspend fun getBlankTrackingPackageIds(): List<Long> =
+        dao.getBlankTrackingPackageIds()
+
     override suspend fun refreshTrackingNumber(trackingNumber: String): Result<Map<Long, Boolean>> {
         val existingRows = dao.getByTrackingNumber(trackingNumber)
         if (existingRows.isEmpty()) return Result.failure(Exception("Package not found"))
