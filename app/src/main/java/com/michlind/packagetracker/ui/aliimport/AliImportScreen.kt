@@ -1,8 +1,10 @@
 package com.michlind.packagetracker.ui.aliimport
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.os.Message
 import android.util.Log
+import android.view.WindowManager
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -37,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,10 +59,44 @@ private const val ORDERS_URL = "https://www.aliexpress.com/p/order/index.html"
 private const val BRIDGE_NAME = "AliBridge"
 private const val TAG = "AliImport"
 
-// Real desktop Chrome UA so AliExpress serves the desktop orders page (not mobile).
+// Real desktop Chrome UA so AliExpress serves the desktop orders page (not
+// mobile). Used for the orders/scrape phase only — auth flows below switch
+// to the device's native UA, because Google's OAuth server rejects desktop
+// UAs that don't match the device's actual platform fingerprint.
 private const val DESKTOP_UA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
         "Chrome/124.0.0.0 Safari/537.36"
+
+// Hosts where a hardcoded desktop UA gets us 403'd ("This browser or app
+// may not be secure"). On these hosts we fall back to the device's native
+// WebView User-Agent with the `; wv` WebView marker stripped — that's the
+// canonical workaround for Google's `disallowed_useragent` block, since
+// the resulting UA is indistinguishable from real Chrome on the same
+// device. Includes the AliExpress login domain because the OAuth handshake
+// for "Sign in with Google" originates there before bouncing to Google.
+private val AUTH_HOST_HINTS = listOf(
+    "accounts.google.com",
+    "accounts.youtube.com",
+    "appleid.apple.com",
+    "facebook.com/dialog/oauth",
+    "facebook.com/v",            // /v3/dialog/oauth, /v10/dialog/oauth, ...
+    "login.aliexpress.com",
+    "passport.aliexpress.com"
+)
+
+private fun isAuthFlowUrl(url: String): Boolean =
+    AUTH_HOST_HINTS.any { url.contains(it, ignoreCase = true) }
+
+/**
+ * Returns the User-Agent appropriate for a given URL: the device's real
+ * WebView UA (minus the `; wv` token) for OAuth/login flows, or the
+ * hardcoded desktop UA for AliExpress's main site so we get the desktop
+ * orders layout our scraper depends on. The "no-wv" device UA is the
+ * documented fix for Google's `disallowed_useragent` block — see e.g.
+ * react-native-oauth#228 and the WebView UA-reduction guidance.
+ */
+private fun userAgentFor(url: String, deviceUaNoWv: String): String =
+    if (isAuthFlowUrl(url)) deviceUaNoWv else DESKTOP_UA
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
@@ -73,6 +110,33 @@ fun AliImportScreen(
     val context = LocalContext.current
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
     val scope = rememberCoroutineScope()
+
+    // The device's actual WebView UA with the `; wv` WebView marker stripped.
+    // We pin this once per composition so the value is stable across the
+    // WebViewClient callbacks below. Used whenever we navigate into an OAuth
+    // / login flow (e.g. "Sign in with Google" from the AliExpress login
+    // page) — Google's auth servers reject our hardcoded desktop UA but
+    // happily accept this one because it matches the actual device.
+    val deviceUaNoWv = remember {
+        WebSettings.getDefaultUserAgent(context).replace("; wv", "")
+    }
+
+    // Keep the screen on while the WebView is doing automated work (scrolling
+    // through orders, scraping the iframe per order). The user can put the
+    // phone down without the system suspending the import mid-loop.
+    val keepScreenOn = state is AliImportState.Authenticating ||
+        state is AliImportState.Importing
+    DisposableEffect(keepScreenOn) {
+        val window = (context as? Activity)?.window
+        if (keepScreenOn) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -122,7 +186,34 @@ fun AliImportScreen(
                             override fun shouldOverrideUrlLoading(
                                 view: WebView,
                                 request: WebResourceRequest
-                            ): Boolean = false
+                            ): Boolean {
+                                // Swap the WebView's User-Agent to match the
+                                // destination so Google's OAuth doesn't 403 us
+                                // on auth flows ("disallowed_useragent") while
+                                // AliExpress still serves us its desktop site
+                                // for scraping. Setting userAgentString in
+                                // WebSettings only takes effect on the *next*
+                                // load — so when the UA needs to change we
+                                // intercept, set, and re-trigger the load
+                                // ourselves; otherwise let the WebView proceed.
+                                val targetUa = userAgentFor(
+                                    request.url.toString(),
+                                    deviceUaNoWv
+                                )
+                                if (view.settings.userAgentString != targetUa) {
+                                    Log.d(
+                                        TAG,
+                                        "UA switch: ${
+                                            if (targetUa == DESKTOP_UA) "desktop"
+                                            else "device-no-wv"
+                                        } for ${request.url}"
+                                    )
+                                    view.settings.userAgentString = targetUa
+                                    view.loadUrl(request.url.toString())
+                                    return true
+                                }
+                                return false
+                            }
 
                             override fun onPageFinished(view: WebView, url: String) {
                                 Log.d(TAG, "onPageFinished: $url")

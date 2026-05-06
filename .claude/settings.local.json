@@ -4,7 +4,11 @@
       "Bash(*)",
       "Read(//tmp/**)",
       "WebFetch(domain:github.com)",
-      "WebSearch"
+      "WebSearch",
+      "PowerShell(*)",
+      "WebFetch(domain:documentation.swing2app.com)",
+      "WebFetch(domain:community.auth0.com)",
+      "WebFetch(domain:www.webviewgold.com)"
     ]
   }
 }
