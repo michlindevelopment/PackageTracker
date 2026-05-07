@@ -1,6 +1,9 @@
 package com.michlind.packagetracker.ui.detail
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -80,6 +83,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -129,9 +133,11 @@ fun DetailScreen(
     val smsList by viewModel.smsList.collectAsStateWithLifecycle()
     val hasSmsPermission by viewModel.hasSmsPermission.collectAsStateWithLifecycle()
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showSmsBlockedDialog by remember { mutableStateOf(false) }
 
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -141,6 +147,11 @@ fun DetailScreen(
             // Don't make the user wait for the next syncStatus() to see
             // anything — kick off a one-shot scan for just this TN.
             viewModel.scanSmsForCurrent()
+        } else {
+            // Sideloaded APKs hit Android's "restricted settings" lock that
+            // greys out the Allow toggle in App info; surface the recovery
+            // steps + a deep-link to App info so the user isn't stranded.
+            showSmsBlockedDialog = true
         }
     }
 
@@ -166,6 +177,38 @@ fun DetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (showSmsBlockedDialog) {
+        AlertDialog(
+            onDismissRequest = { showSmsBlockedDialog = false },
+            title = { Text("SMS access is blocked") },
+            text = {
+                Text(
+                    "Android blocks SMS access for sideloaded apps by default. " +
+                        "To enable it:\n\n" +
+                        "1. Tap \"Open App info\" below\n" +
+                        "2. Tap the ⋮ menu (top-right)\n" +
+                        "3. Tap \"Allow restricted settings\"\n" +
+                        "4. Open Permissions → SMS → Allow"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSmsBlockedDialog = false
+                    val intent = Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null)
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                }) { Text("Open App info") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSmsBlockedDialog = false }) {
                     Text(stringResource(R.string.cancel))
                 }
             }

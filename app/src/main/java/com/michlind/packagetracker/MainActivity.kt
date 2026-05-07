@@ -44,7 +44,9 @@ import javax.inject.Inject
 * During import keep screen on - V
 * Done and Start sometimes not working - V
 * Update items that received but in received status - V
-* Add option to reimport for items without tracking number
+* Add option to reimport for items without tracking number - V
+* Better SMS permission handling
+* Sync stops on each screen change
 * */
 
 @AndroidEntryPoint
