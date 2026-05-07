@@ -13,7 +13,10 @@ import javax.inject.Singleton
 /**
  * User toggle for the auto-sync that runs whenever the app comes to the
  * foreground (cold start + resume from background). When off, the user has
- * to pull updates manually from the Refresh sheet. Default: on.
+ * to pull updates manually from the Refresh sheet. Default: off — opt-in
+ * because the auto-sync hits Cainiao for every active TN, and getting
+ * rate-limited on every cold start is worse UX than missing a refresh the
+ * user didn't ask for.
  */
 @Singleton
 class SyncOnResumePreferenceRepository @Inject constructor(
@@ -22,7 +25,7 @@ class SyncOnResumePreferenceRepository @Inject constructor(
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private val _enabled = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, true))
+    private val _enabled = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, false))
     val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
 
     fun setEnabled(value: Boolean) {

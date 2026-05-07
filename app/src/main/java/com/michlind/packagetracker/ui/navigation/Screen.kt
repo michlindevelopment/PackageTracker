@@ -12,4 +12,7 @@ sealed class Screen(val route: String) {
     data object Settings : Screen("settings")
     data object AliLogin : Screen("aliexpress_login")
     data object Contributors : Screen("contributors")
+    data object Captcha : Screen("captcha/{trackingNumber}") {
+        fun createRoute(trackingNumber: String) = "captcha/$trackingNumber"
+    }
 }

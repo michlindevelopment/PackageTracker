@@ -180,6 +180,13 @@ class HomeViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    // Set to a representative tracking number when Cainiao's bot detection
+    // hits — HomeScreen reads this to attach a "Verify" action to the
+    // snackbar that opens CaptchaScreen with that tracking number's URL.
+    // Cleared once the snackbar is dismissed (via clearError).
+    private val _captchaTrackingNumber = MutableStateFlow<String?>(null)
+    val captchaTrackingNumber: StateFlow<String?> = _captchaTrackingNumber.asStateFlow()
+
     // ─── Background AliExpress import (chained after refreshAll) ─────────────
     // Set true while HomeScreen should host the hidden WebView. The WebView's
     // bridge events flow into bgEventChannel below, and one of the on*() funcs
@@ -412,21 +419,42 @@ class HomeViewModel @Inject constructor(
 
     /** quickFetch followed by syncStatus — for the Refresh sheet. */
     fun quickFetchThenSyncStatus() = viewModelScope.launch {
-        runChain(AliImportMode.Quick, runStatusSync = false, runBgImport = true)
+        // Skip Phase 4 in the import pass — the trailing syncStatus refreshes
+        // every eligible TN anyway, so the targeted post-import refresh
+        // would just hit Cainiao a second time for the same TNs (which is
+        // exactly what the rate limiter is trying to avoid).
+        runChain(
+            AliImportMode.Quick,
+            runStatusSync = false,
+            runBgImport = true,
+            runTargetedRefresh = false
+        )
         runChain(AliImportMode.Quick, runStatusSync = true, runBgImport = false)
     }
 
     /** fullFetch followed by syncStatus — for the Refresh sheet and the
-     *  post-manual-import flow. */
+     *  post-login flow. */
     fun fullFetchThenSyncStatus() = viewModelScope.launch {
-        runChain(AliImportMode.FullSync, runStatusSync = false, runBgImport = true)
+        runChain(
+            AliImportMode.FullSync,
+            runStatusSync = false,
+            runBgImport = true,
+            runTargetedRefresh = false
+        )
         runChain(AliImportMode.Quick, runStatusSync = true, runBgImport = false)
     }
 
     private suspend fun runChain(
         mode: AliImportMode,
         runStatusSync: Boolean,
-        runBgImport: Boolean
+        runBgImport: Boolean,
+        // When true, after the import completes we refresh the carrier
+        // status for any TNs that changed during it. Standalone fetches
+        // (quickFetch / fullFetch) want this so newly-enriched orders show
+        // status immediately. The chained-with-syncStatus variants pass
+        // false to avoid a duplicate Cainiao hit — syncStatus's broad
+        // refresh covers the changed TNs along with everything else.
+        runTargetedRefresh: Boolean = true
     ) {
         refreshMutex.withLock {
             _isRefreshing.value = true
@@ -494,13 +522,20 @@ class HomeViewModel @Inject constructor(
                 bgImportOutcome = null
                 _bgImportProgress.value = null
 
-                // Phase 4 — only if the import actually completed: refresh
-                // each snapshot id whose tracking number changed during the
+                // Phase 4 — only if the import actually completed AND the
+                // caller asked for the targeted refresh: refresh each
+                // snapshot id whose tracking number changed during the
                 // import. Quick mode captured "" for everyone, so any
                 // non-blank value in the DB now is a "blank → set" change.
-                // Full Sync compares against the real prior TN, so it picks
-                // up both blank → set AND set → different-set.
-                if (outcome == BgImportOutcome.Completed && snapshot.isNotEmpty()) {
+                // Full Sync compares against the real prior TN, so it
+                // picks up both blank → set AND set → different-set. The
+                // `*ThenSyncStatus` chains pass runTargetedRefresh=false
+                // because the trailing syncStatus would otherwise refresh
+                // these TNs a second time.
+                if (runTargetedRefresh &&
+                    outcome == BgImportOutcome.Completed &&
+                    snapshot.isNotEmpty()
+                ) {
                     val tns = withContext(Dispatchers.IO) {
                         snapshot.entries.mapNotNull { (id, prevTn) ->
                             val current = repository.getPackageById(id)?.trackingNumber
@@ -539,14 +574,22 @@ class HomeViewModel @Inject constructor(
             val result = refreshTrackingNumber(tn)
             val ex = result.exceptionOrNull()
             if (ex is CainiaoRateLimitException) {
-                _errorMessage.value = "Tracking sync paused — Cainiao is " +
-                    "temporarily blocking requests. Try again in a few minutes."
+                _errorMessage.value = "Cainiao is asking us to verify."
+                // Hand the failing TN to the UI so the captcha WebView can
+                // load that exact tracking page — the slide puzzle Cainiao
+                // serves is the same regardless, but the URL keeps the
+                // user oriented and gives a real page to land on after
+                // they solve it.
+                _captchaTrackingNumber.value = tn
                 return
             }
         }
     }
 
-    fun clearError() { _errorMessage.value = null }
+    fun clearError() {
+        _errorMessage.value = null
+        _captchaTrackingNumber.value = null
+    }
 
     override fun onCleared() {
         ProcessLifecycleOwner.get().lifecycle.removeObserver(processLifecycleObserver)

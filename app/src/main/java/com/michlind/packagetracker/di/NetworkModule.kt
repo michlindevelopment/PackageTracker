@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.michlind.packagetracker.data.api.CainiaoApiService
 import com.michlind.packagetracker.data.api.GitHubReleaseService
+import com.michlind.packagetracker.data.api.WebViewCookieJar
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -45,6 +46,9 @@ object NetworkModule {
             level = HttpLoggingInterceptor.Level.BODY
         }
         return OkHttpClient.Builder()
+            // Share the cookie jar with the WebView so the bot-detection
+            // verification cookie set by CaptchaScreen lands here too.
+            .cookieJar(WebViewCookieJar())
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
                     .header("User-Agent", USER_AGENT)

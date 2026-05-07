@@ -108,6 +108,7 @@ fun HomeScreen(
     onAddClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onSignInToAliExpress: () -> Unit,
+    onVerifyCaptcha: (trackingNumber: String) -> Unit,
     refreshAndShowInTransit: Boolean = false,
     onRefreshConsumed: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
@@ -118,6 +119,7 @@ fun HomeScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val refreshingTn by viewModel.refreshingTrackingNumber.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    val captchaTrackingNumber by viewModel.captchaTrackingNumber.collectAsStateWithLifecycle()
     val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
     val bgImportActive by viewModel.bgImportActive.collectAsStateWithLifecycle()
     val bgImportProgress by viewModel.bgImportProgress.collectAsStateWithLifecycle()
@@ -147,11 +149,21 @@ fun HomeScreen(
     var pendingTogglePkg by remember { mutableStateOf<TrackedPackage?>(null) }
     var pendingToggleTarget by remember { mutableStateOf(false) }
 
-    LaunchedEffect(errorMessage) {
-        if (errorMessage != null) {
-            snackbarHostState.showSnackbar(errorMessage!!)
-            viewModel.clearError()
+    LaunchedEffect(errorMessage, captchaTrackingNumber) {
+        val msg = errorMessage ?: return@LaunchedEffect
+        // If the error came from Cainiao's bot wall, give the user a way to
+        // resolve it: a "Verify" action that opens the captcha WebView.
+        // Otherwise it's a plain dismissable error.
+        val tn = captchaTrackingNumber
+        val result = snackbarHostState.showSnackbar(
+            message = msg,
+            actionLabel = if (tn != null) "Verify" else null,
+            duration = if (tn != null) SnackbarDuration.Long else SnackbarDuration.Short
+        )
+        if (result == SnackbarResult.ActionPerformed && tn != null) {
+            onVerifyCaptcha(tn)
         }
+        viewModel.clearError()
     }
 
     // Triggered after AliExpress login completes. Switch to the In Transit
@@ -445,10 +457,11 @@ fun HomeScreen(
                 // If the user is already signed in to AliExpress, the
                 // "Sign in" option in the sheet has nothing to offer —
                 // background sync handles new orders automatically. Skip
-                // the sheet and go straight to manual add.
+                // the sheet and go straight to manual add. Same loose
+                // sign=y heuristic used elsewhere in the app.
                 val cookies = CookieManager.getInstance()
                     .getCookie("https://www.aliexpress.com").orEmpty()
-                val signedIn = cookies.split(";").any { it.trim() == "sign=y" }
+                val signedIn = cookies.contains("sign=y")
                 if (signedIn) {
                     onAddClick()
                 } else {

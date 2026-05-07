@@ -18,6 +18,7 @@ import androidx.navigation.navArgument
 import com.michlind.packagetracker.ui.add.AddEditScreen
 import com.michlind.packagetracker.ui.alilogin.AliLoginScreen
 import com.michlind.packagetracker.ui.attach.AttachImageSheet
+import com.michlind.packagetracker.ui.captcha.CaptchaScreen
 import com.michlind.packagetracker.ui.contributors.ContributorsScreen
 import com.michlind.packagetracker.ui.detail.DetailScreen
 import com.michlind.packagetracker.ui.home.HomeScreen
@@ -79,6 +80,9 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 onSignInToAliExpress = {
                     navController.navigate(Screen.AliLogin.route)
                 },
+                onVerifyCaptcha = { trackingNumber ->
+                    navController.navigate(Screen.Captcha.createRoute(trackingNumber))
+                },
                 refreshAndShowInTransit = refreshSignal,
                 onRefreshConsumed = {
                     backStackEntry.savedStateHandle["aliImportDone"] = false
@@ -111,6 +115,17 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                         .savedStateHandle["aliImportDone"] = true
                     navController.popBackStack(Screen.Home.route, inclusive = false)
                 }
+            )
+        }
+
+        composable(
+            route = Screen.Captcha.route,
+            arguments = listOf(navArgument("trackingNumber") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val tn = backStackEntry.arguments?.getString("trackingNumber").orEmpty()
+            CaptchaScreen(
+                trackingNumber = tn,
+                onBack = { navController.popBackStack() }
             )
         }
 

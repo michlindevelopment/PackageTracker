@@ -103,11 +103,12 @@ class ImportAliOrderUseCase @Inject constructor(
                         externalOrderId = externalId
                     )
                     val newId = repository.addPackage(pkg)
-                    // Only refresh tracking for in-transit imports — pre-shipment
-                    // and delivered packages either have no tracking or don't need it.
-                    if (tn.isNotBlank() && !notYetShipped && !received) {
-                        repository.refreshPackage(newId)
-                    }
+                    // Carrier-status fetch is no longer triggered inline.
+                    // The caller is expected to follow this import with a
+                    // syncStatus pass (every reachable flow does:
+                    // quickFetchThenSyncStatus / fullFetchThenSyncStatus),
+                    // and that pass refreshes every eligible TN — including
+                    // this brand-new one — exactly once.
                     Log.d(
                         TAG,
                         "  -> ADDED id=$newId status=$status received=$received " +
@@ -168,8 +169,6 @@ class ImportAliOrderUseCase @Inject constructor(
                         )
                         reasons += if (wasBlank) "got tn" else "tn changed"
                     }
-                    val gotTn = shouldUpdateTn
-
                     if (existing.name.isBlank() && order.name.isNotBlank()) {
                         updated = updated.copy(name = order.name)
                         reasons += "name"
@@ -188,7 +187,11 @@ class ImportAliOrderUseCase @Inject constructor(
                         ImportResult.SKIPPED
                     } else {
                         repository.updatePackage(updated)
-                        if (gotTn) repository.refreshPackage(existing.id)
+                        // No inline carrier refresh on TN changes either —
+                        // the trailing syncStatus picks them up. (This used
+                        // to also handle wiping the timeline before the
+                        // refresh; the wipe still happens above where
+                        // updated.events is set to emptyList on tnChanged.)
                         Log.d(TAG, "  -> UPGRADED id=${existing.id} (${reasons.joinToString()})")
                         ImportResult.UPGRADED
                     }
