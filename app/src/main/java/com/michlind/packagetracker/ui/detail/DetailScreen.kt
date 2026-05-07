@@ -3,7 +3,13 @@ package com.michlind.packagetracker.ui.detail
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -22,6 +28,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,14 +39,12 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -65,8 +71,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -122,7 +132,6 @@ fun DetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableStateOf(0) }
 
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -178,19 +187,6 @@ fun DetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = { if (!isRefreshing) viewModel.refresh(packageId) },
-                        enabled = !isRefreshing
-                    ) {
-                        if (isRefreshing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
-                        }
-                    }
                     IconButton(onClick = { onEditClick(packageId) }) {
                         Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit_package))
                     }
@@ -234,8 +230,6 @@ fun DetailScreen(
                     pkg = state.pkg,
                     isRefreshing = isRefreshing,
                     paddingValues = paddingValues,
-                    selectedTab = selectedTab,
-                    onTabSelected = { selectedTab = it },
                     smsMessages = smsList,
                     hasSmsPermission = hasSmsPermission,
                     onRequestSmsPermission = {
@@ -258,8 +252,6 @@ private fun DetailContent(
     pkg: TrackedPackage,
     isRefreshing: Boolean,
     paddingValues: PaddingValues,
-    selectedTab: Int,
-    onTabSelected: (Int) -> Unit,
     smsMessages: List<TrackingSms>,
     hasSmsPermission: Boolean,
     onRequestSmsPermission: () -> Unit,
@@ -267,235 +259,276 @@ private fun DetailContent(
 ) {
     val nameTooltipState = rememberTooltipState(isPersistent = true)
     val tooltipScope = rememberCoroutineScope()
+    // Pager owns the selected tab — clicking a tab animates the pager,
+    // and a horizontal swipe slides between Tracking and SMS pages.
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val tabScope = rememberCoroutineScope()
 
-    LazyColumn(
+    // Collapse the bulky ETA card + Shipping Progress stepper when the
+    // user scrolls down inside a pager page, expand them when scrolling
+    // back to the top. Status header stays pinned so the package's
+    // identity is always visible. Threshold is small so the collapse
+    // feels responsive but doesn't trigger on incidental fling friction.
+    var topExpanded by remember { mutableStateOf(true) }
+    val collapseScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (available.y < -8f && topExpanded) topExpanded = false
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (available.y > 8f && !topExpanded) topExpanded = true
+                return Offset.Zero
+            }
+        }
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(paddingValues),
-        contentPadding = PaddingValues(bottom = 32.dp)
+            .padding(paddingValues)
+            .nestedScroll(collapseScrollConnection)
     ) {
-        // Refresh indicator
-        item {
-            if (isRefreshing) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    strokeCap = StrokeCap.Round
-                )
-            }
+        if (isRefreshing) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                strokeCap = StrokeCap.Round
+            )
         }
 
         // Status header with small square thumbnail
-        item {
-            Row(
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    .size(80.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (pkg.photoUri != null) {
-                        AsyncImage(
-                            model = pkg.photoUri,
-                            contentDescription = "Package photo",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Inventory2,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    val (color, icon) = pkg.status.colorAndIcon()
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = pkg.status.displayName,
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = color
-                        )
-                        if (pkg.name.isNotBlank()) {
-                            Spacer(Modifier.width(6.dp))
-                            TooltipBox(
-                                positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
-                                tooltip = {
-                                    RichTooltip {
-                                        Text(pkg.name)
-                                    }
-                                },
-                                state = nameTooltipState
-                            ) {
-                                IconButton(
-                                    onClick = { tooltipScope.launch { nameTooltipState.show() } },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Info,
-                                        contentDescription = "Show full item name",
-                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    if (pkg.statusDescription.isNotBlank()) {
-                        Text(
-                            text = pkg.statusDescription,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                    if (pkg.trackingNumber.isNotBlank()) {
-                        Text(
-                            text = pkg.trackingNumber,
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                            modifier = Modifier.padding(top = 6.dp)
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.padding(top = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        pkg.originCountry?.let { InfoChip(label = "From", value = it) }
-                        pkg.destCountry?.let { InfoChip(label = "To", value = it) }
-                        pkg.daysInTransit?.let { InfoChip(label = "Transit", value = it) }
-                    }
+                if (pkg.photoUri != null) {
+                    AsyncImage(
+                        model = pkg.photoUri,
+                        contentDescription = "Package photo",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Inventory2,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(36.dp)
+                    )
                 }
             }
-        }
-
-        // ETA
-        pkg.estimatedDeliveryTime?.let { eta ->
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+            Column(modifier = Modifier.weight(1f)) {
+                val (color, icon) = pkg.status.colorAndIcon()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = pkg.status.displayName,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = color
                     )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = stringResource(R.string.estimated_delivery),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            )
-                            Text(
-                                text = DateUtils.formatDate(eta),
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            val daysLeft = DateUtils.daysFromNow(eta)
-                            if (daysLeft > 0) {
-                                Text(
-                                    text = "In $daysLeft days",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    if (pkg.name.isNotBlank()) {
+                        Spacer(Modifier.width(6.dp))
+                        TooltipBox(
+                            positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
+                            tooltip = {
+                                RichTooltip {
+                                    Text(pkg.name)
+                                }
+                            },
+                            state = nameTooltipState
+                        ) {
+                            IconButton(
+                                onClick = { tooltipScope.launch { nameTooltipState.show() } },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Info,
+                                    contentDescription = "Show full item name",
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
                     }
                 }
-                Spacer(Modifier.height(16.dp))
+                if (pkg.statusDescription.isNotBlank()) {
+                    Text(
+                        text = pkg.statusDescription,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                if (pkg.trackingNumber.isNotBlank()) {
+                    Text(
+                        text = pkg.trackingNumber,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+                Row(
+                    modifier = Modifier.padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    pkg.originCountry?.let { InfoChip(label = "From", value = it) }
+                    pkg.destCountry?.let { InfoChip(label = "To", value = it) }
+                    pkg.daysInTransit?.let { InfoChip(label = "Transit", value = it) }
+                }
             }
         }
 
-        // Progress stepper
-        item {
-            ProgressStepper(
-                currentStatus = pkg.status,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        // ETA + Shipping Progress collapse together when the user scrolls
+        // inside the tab content; they re-expand when they scroll back up
+        // to the top of the page.
+        AnimatedVisibility(
+            visible = topExpanded,
+            enter = expandVertically(animationSpec = tween(durationMillis = 220)) +
+                fadeIn(animationSpec = tween(durationMillis = 220)),
+            exit = shrinkVertically(animationSpec = tween(durationMillis = 200)) +
+                fadeOut(animationSpec = tween(durationMillis = 200))
+        ) {
+            Column {
+                pkg.estimatedDeliveryTime?.let { eta ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.estimated_delivery),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                )
+                                Text(
+                                    text = DateUtils.formatDate(eta),
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                val daysLeft = DateUtils.daysFromNow(eta)
+                                if (daysLeft > 0) {
+                                    Text(
+                                        text = "In $daysLeft days",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+
+                ProgressStepper(
+                    currentStatus = pkg.status,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                )
+            }
+        }
+
+        // Tabs — pinned right under Shipping Progress. Tap or swipe to
+        // switch between Tracking history and SMS.
+        PrimaryTabRow(
+            selectedTabIndex = pagerState.currentPage,
+            modifier = Modifier.padding(top = 8.dp)
+        ) {
+            Tab(
+                selected = pagerState.currentPage == 0,
+                onClick = { tabScope.launch { pagerState.animateScrollToPage(0) } },
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Timeline,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text("Tracking")
+                    }
+                }
+            )
+            Tab(
+                selected = pagerState.currentPage == 1,
+                onClick = { tabScope.launch { pagerState.animateScrollToPage(1) } },
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Message,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        val label = if (smsMessages.isEmpty()) "SMS"
+                            else "SMS (${smsMessages.size})"
+                        Text(label)
+                    }
+                }
             )
         }
 
-        // Tabs — sit right under the Shipping Progress card and replace
-        // the old "Tracking History" section header. The bottom of this
-        // LazyColumn is what the tabs control.
-        item {
-            PrimaryTabRow(
-                selectedTabIndex = selectedTab,
-                modifier = Modifier.padding(top = 8.dp)
+        // Swipeable pages — each owns its own LazyColumn so vertical
+        // scroll inside Tracking doesn't affect SMS scroll position and
+        // vice versa.
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) { page ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)
             ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { onTabSelected(0) },
-                    text = {
-                        // Inline icon + label in a Row so the icon sits to
-                        // the left of the text — Tab's built-in `icon` slot
-                        // stacks icon ABOVE text, which we don't want.
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Timeline,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text("Tracking")
-                        }
-                    }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { onTabSelected(1) },
-                    text = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Message,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            val label = if (smsMessages.isEmpty()) "SMS"
-                                else "SMS (${smsMessages.size})"
-                            Text(label)
-                        }
-                    }
-                )
+                if (page == 0) {
+                    trackingHistoryItems(events = pkg.events)
+                } else {
+                    smsItems(
+                        trackingNumber = pkg.trackingNumber,
+                        messages = smsMessages,
+                        hasPermission = hasSmsPermission,
+                        onRequestPermission = onRequestSmsPermission,
+                        onCopyMessage = onCopyMessage
+                    )
+                }
             }
-            Spacer(Modifier.height(8.dp))
-        }
-
-        if (selectedTab == 0) {
-            trackingHistoryItems(events = pkg.events)
-        } else {
-            smsItems(
-                trackingNumber = pkg.trackingNumber,
-                messages = smsMessages,
-                hasPermission = hasSmsPermission,
-                onRequestPermission = onRequestSmsPermission,
-                onCopyMessage = onCopyMessage
-            )
         }
     }
 }
