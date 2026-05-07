@@ -83,7 +83,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // The AliExpress login marker is the `sign=y` cookie on aliexpress.com —
-    // same heuristic used by AliImportScreen to decide login vs orders page.
+    // same heuristic used by AliLoginScreen and BgAliImportWebView.
     fun refreshAliConnection() {
         val cookies = try {
             CookieManager.getInstance().getCookie("https://www.aliexpress.com").orEmpty()

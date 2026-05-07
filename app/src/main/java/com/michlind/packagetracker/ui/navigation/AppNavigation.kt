@@ -16,7 +16,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.michlind.packagetracker.ui.add.AddEditScreen
-import com.michlind.packagetracker.ui.aliimport.AliImportScreen
+import com.michlind.packagetracker.ui.alilogin.AliLoginScreen
 import com.michlind.packagetracker.ui.attach.AttachImageSheet
 import com.michlind.packagetracker.ui.contributors.ContributorsScreen
 import com.michlind.packagetracker.ui.detail.DetailScreen
@@ -76,8 +76,8 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
                 },
-                onImportFromAliExpress = {
-                    navController.navigate(Screen.AliImport.route)
+                onSignInToAliExpress = {
+                    navController.navigate(Screen.AliLogin.route)
                 },
                 refreshAndShowInTransit = refreshSignal,
                 onRefreshConsumed = {
@@ -101,12 +101,12 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
             )
         }
 
-        composable(Screen.AliImport.route) {
-            AliImportScreen(
+        composable(Screen.AliLogin.route) {
+            AliLoginScreen(
                 onBack = { navController.popBackStack() },
-                onDone = {
-                    // Signal Home to switch to In Transit + refresh, then pop
-                    // both AliImport and Settings off the stack in one step.
+                onLoggedIn = {
+                    // Signal Home that login just succeeded so it switches
+                    // to In Transit and triggers fullFetchThenSyncStatus().
                     navController.getBackStackEntry(Screen.Home.route)
                         .savedStateHandle["aliImportDone"] = true
                     navController.popBackStack(Screen.Home.route, inclusive = false)

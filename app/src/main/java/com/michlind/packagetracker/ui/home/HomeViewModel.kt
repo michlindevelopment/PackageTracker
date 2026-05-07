@@ -109,10 +109,10 @@ private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup
 private enum class BgImportOutcome { Completed, Skipped, Aborted }
 
 /**
- * Live progress of the in-flight background AliExpress import. Mirrors what
- * the manual AliImportScreen overlay shows so the user gets the same
- * "loading orders / loading 'To ship' / N of M imported" feedback when they
- * trigger Quick or Full from the Refresh sheet.
+ * Live progress of the in-flight background AliExpress import — surfaced via
+ * BgImportProgressBanner so the user gets "loading orders / loading 'To
+ * ship' / N of M imported" feedback while Quick or Full from the Refresh
+ * sheet runs.
  */
 data class BgImportProgress(
     val statusText: String,
@@ -282,9 +282,9 @@ class HomeViewModel @Inject constructor(
 
     /**
      * Called by HomeScreen right before injecting ali_import.js into the
-     * hidden WebView. Mirrors AliImportViewModel.beginImport() — seeds the
-     * bridge with the orderIds we already have a tracking number for, plus
-     * the per-tab page-budget overrides from user prefs.
+     * hidden WebView. Seeds the bridge with the orderIds we already have a
+     * tracking number for, plus the per-tab page-budget overrides from user
+     * prefs.
      *
      * In FullSync mode the seed is empty, so the JS does the per-order
      * iframe lookup for every order — including ones we've imported before —

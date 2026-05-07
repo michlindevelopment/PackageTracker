@@ -1,5 +1,6 @@
 package com.michlind.packagetracker.ui.home
 
+import android.webkit.CookieManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -106,7 +107,7 @@ fun HomeScreen(
     onPackageClick: (Long) -> Unit,
     onAddClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onImportFromAliExpress: () -> Unit,
+    onSignInToAliExpress: () -> Unit,
     refreshAndShowInTransit: Boolean = false,
     onRefreshConsumed: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
@@ -153,15 +154,15 @@ fun HomeScreen(
         }
     }
 
-    // Triggered when the user finishes an AliExpress import — switch to the
-    // In Transit tab and pull fresh Cainiao events. The manual import itself
-    // runs in FullSync mode (visible scrape covers new orders AND tracking-
-    // number changes for existing ones), so all that's left here is a
-    // carrier status pass — no second AliExpress scrape needed.
+    // Triggered after AliExpress login completes. Switch to the In Transit
+    // tab and run a Full fetch + status sync — the user just signed in, so
+    // we want to pull every order (catching tracking-number changes for
+    // pre-existing imports) and refresh carrier statuses afterwards. The
+    // bg-import banner above the list shows live progress regardless of tab.
     LaunchedEffect(refreshAndShowInTransit) {
         if (refreshAndShowInTransit) {
             pagerState.animateScrollToPage(1)
-            viewModel.syncStatus()
+            viewModel.fullFetchThenSyncStatus()
             onRefreshConsumed()
         }
     }
@@ -314,20 +315,21 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 BottomSheetActionRow(
-                    icon = Icons.Default.ShoppingCart,
-                    title = "Auto-import from AliExpress",
-                    subtitle = "Sign in and pull recent orders",
-                    onClick = {
-                        showAddOptions = false
-                        onImportFromAliExpress()
-                    }
-                )
-                BottomSheetActionRow(
                     icon = Icons.Default.Edit,
                     title = "Add manually",
                     subtitle = "Enter a tracking number yourself",
                     onClick = {
+                        showAddOptions = false
                         onAddClick()
+                    }
+                )
+                BottomSheetActionRow(
+                    icon = Icons.Default.ShoppingCart,
+                    title = "Sign in to AliExpress",
+                    subtitle = "Pull your recent orders automatically",
+                    onClick = {
+                        showAddOptions = false
+                        onSignInToAliExpress()
                     }
                 )
             }
@@ -384,17 +386,26 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
-                    IconButton(
-                        onClick = { if (!isRefreshing) showRefreshOptions = true },
-                        enabled = !isRefreshing
-                    ) {
-                        if (isRefreshing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
+                    // Hide the refresh icon entirely when the user has no
+                    // packages anywhere (To Ship + In Transit + Received all
+                    // empty) — there's nothing to sync. Sign-in via the FAB
+                    // is the path to bring orders in for the first time.
+                    val hasAnyPackages = activeGroups.isNotEmpty() ||
+                        receivedGroups.isNotEmpty() ||
+                        notYetSent.isNotEmpty()
+                    if (hasAnyPackages) {
+                        IconButton(
+                            onClick = { if (!isRefreshing) showRefreshOptions = true },
+                            enabled = !isRefreshing
+                        ) {
+                            if (isRefreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
+                            }
                         }
                     }
                     Box {
@@ -431,7 +442,18 @@ fun HomeScreen(
         floatingActionButton = {
             FloatingActionButton(onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                showAddOptions = true
+                // If the user is already signed in to AliExpress, the
+                // "Sign in" option in the sheet has nothing to offer —
+                // background sync handles new orders automatically. Skip
+                // the sheet and go straight to manual add.
+                val cookies = CookieManager.getInstance()
+                    .getCookie("https://www.aliexpress.com").orEmpty()
+                val signedIn = cookies.split(";").any { it.trim() == "sign=y" }
+                if (signedIn) {
+                    onAddClick()
+                } else {
+                    showAddOptions = true
+                }
             }) {
                 Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_package))
             }
