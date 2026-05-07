@@ -34,7 +34,14 @@ data class CainiaoTraceEvent(
 
 data class TraceGroup(
     @SerializedName("nodeCode") val nodeCode: String?,
-    @SerializedName("nodeDesc") val nodeDesc: String?
+    @SerializedName("nodeDesc") val nodeDesc: String?,
+    // Icon to show on the timeline for the *latest* event in this group
+    // (the one currently being rendered as the head of the trace). 48×48
+    // PNG hosted on alicdn — pass straight to AsyncImage.
+    @SerializedName("currentIconUrl") val currentIconUrl: String?,
+    // Icon for past events of the same group — same source, drawn in a
+    // muted "completed" style on alicdn's side.
+    @SerializedName("historyIconUrl") val historyIconUrl: String?
 )
 
 data class ProcessInfo(

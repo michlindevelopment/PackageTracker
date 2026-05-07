@@ -3,6 +3,7 @@ package com.michlind.packagetracker.data.preferences
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.michlind.packagetracker.domain.model.SortMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,28 +11,28 @@ import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * User toggle for status-update notifications. When off, the periodic
- * refresh worker skips the notification call (the row still updates
- * silently in the DB). Default: on.
- */
 @Singleton
-class NotificationPreferenceRepository @Inject constructor(
+class SortPreferenceRepository @Inject constructor(
     @ApplicationContext context: Context
 ) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private val _enabled = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, true))
-    val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
+    private val _mode = MutableStateFlow(loadMode())
+    val mode: StateFlow<SortMode> = _mode.asStateFlow()
 
-    fun setEnabled(value: Boolean) {
-        prefs.edit { putBoolean(KEY_ENABLED, value) }
-        _enabled.value = value
+    fun setMode(value: SortMode) {
+        prefs.edit { putString(KEY_SORT_MODE, value.name) }
+        _mode.value = value
+    }
+
+    private fun loadMode(): SortMode {
+        val raw = prefs.getString(KEY_SORT_MODE, null) ?: return SortMode.LAST_SHIPPED
+        return runCatching { SortMode.valueOf(raw) }.getOrDefault(SortMode.LAST_SHIPPED)
     }
 
     private companion object {
         const val PREFS_NAME = "ptracker_settings"
-        const val KEY_ENABLED = "notifications_enabled"
+        const val KEY_SORT_MODE = "home_sort_mode"
     }
 }

@@ -1,6 +1,7 @@
 package com.michlind.packagetracker.domain.usecase
 
 import android.util.Log
+import com.michlind.packagetracker.domain.model.AliImportMode
 import com.michlind.packagetracker.domain.model.AliOrderImport
 import com.michlind.packagetracker.domain.model.ImportResult
 import com.michlind.packagetracker.domain.model.PackageStatus
@@ -27,7 +28,10 @@ class ImportAliOrderUseCase @Inject constructor(
     private val repository: PackageRepository,
     private val imageDownloader: RemoteImageDownloader
 ) {
-    suspend operator fun invoke(order: AliOrderImport): ImportResult {
+    suspend operator fun invoke(
+        order: AliOrderImport,
+        mode: AliImportMode = AliImportMode.Quick
+    ): ImportResult {
         val externalId = "ali:${order.orderId}"
         val existing = repository.getByExternalOrderId(externalId)
         val tn = order.trackingNumber?.trim().orEmpty()
@@ -49,29 +53,53 @@ class ImportAliOrderUseCase @Inject constructor(
                     val localPhoto = order.imageUrl?.let {
                         imageDownloader.download(it, fileBaseName = order.orderId)
                     }
-                    // The card status is authoritative — a missing tracking
-                    // number on an "Awaiting delivery" card just means we
-                    // couldn't scrape it, NOT that the order hasn't shipped.
-                    val status = when {
+
+                    // If a row with this tracking number already exists, this
+                    // new order is joining an existing multi-group (multiple
+                    // AliExpress orders shipping under one TN). Inherit the
+                    // group's tracking events / delivery metadata so the new
+                    // row renders the same shipping progress as its siblings
+                    // — otherwise the AliExpress-completed and ready-to-ship
+                    // paths skip the Cainiao refresh below and we'd ship an
+                    // empty timeline. Doesn't matter which sibling we pick;
+                    // they all share the same TN-derived data after a refresh.
+                    val sibling = if (tn.isNotBlank()) {
+                        repository.getFirstByTrackingNumber(tn)
+                    } else null
+
+                    // ORDER_PLACED requires a tracking number — without one we'd
+                    // have nothing to refresh against Cainiao. If the iframe scrape
+                    // failed on a shipped order, park it as NOT_YET_SENT; the
+                    // upgrade path below will promote it once a re-import succeeds.
+                    val baseStatus = when {
                         received -> PackageStatus.DELIVERED
-                        notYetShipped -> PackageStatus.NOT_YET_SENT
+                        notYetShipped || tn.isBlank() -> PackageStatus.NOT_YET_SENT
                         else -> PackageStatus.ORDER_PLACED
                     }
+                    // Trust AliExpress for the boundary states (received /
+                    // not yet sent); for anything in between, defer to the
+                    // sibling's carrier-derived status so the multi-group's
+                    // StatusBadge stays consistent.
+                    val status = if (sibling != null && !received && !notYetShipped) {
+                        sibling.status
+                    } else baseStatus
+
                     val pkg = TrackedPackage(
                         trackingNumber = tn,
                         name = order.name,
                         photoUri = localPhoto,
                         status = status,
-                        statusDescription = order.statusText.orEmpty(),
-                        lastEvent = null,
-                        events = emptyList(),
-                        lastUpdated = 0L,
+                        statusDescription = sibling?.statusDescription
+                            ?: order.statusText.orEmpty(),
+                        lastEvent = sibling?.lastEvent,
+                        events = sibling?.events ?: emptyList(),
+                        lastUpdated = sibling?.lastUpdated ?: 0L,
                         isReceived = received,
                         createdAt = order.orderCreatedAt,
-                        estimatedDeliveryTime = null,
-                        daysInTransit = null,
-                        originCountry = null,
-                        destCountry = null,
+                        estimatedDeliveryTime = sibling?.estimatedDeliveryTime,
+                        daysInTransit = sibling?.daysInTransit,
+                        originCountry = sibling?.originCountry,
+                        destCountry = sibling?.destCountry,
                         externalOrderId = externalId
                     )
                     val newId = repository.addPackage(pkg)
@@ -80,40 +108,90 @@ class ImportAliOrderUseCase @Inject constructor(
                     if (tn.isNotBlank() && !notYetShipped && !received) {
                         repository.refreshPackage(newId)
                     }
-                    Log.d(TAG, "  -> ADDED id=$newId status=$status received=$received")
+                    Log.d(
+                        TAG,
+                        "  -> ADDED id=$newId status=$status received=$received " +
+                            "sibling=${sibling != null}"
+                    )
                     ImportResult.ADDED
                 }
 
-                // Existing record — promote to Received if AliExpress now says
-                // the order is complete (the user might have confirmed receipt
-                // on the website since our last import).
-                received && !existing.isReceived -> {
-                    repository.updatePackage(
-                        existing.copy(
+                // Existing record — apply any upgrades AliExpress now offers:
+                //  - mark received if the order completed on the website
+                //  - fill in tracking number if the iframe scrape succeeded this time
+                //  - backfill name / image if a previous import didn't capture them
+                else -> {
+                    var updated = existing
+                    val reasons = mutableListOf<String>()
+
+                    if (received && !existing.isReceived) {
+                        updated = updated.copy(
                             isReceived = true,
                             status = PackageStatus.DELIVERED,
                             statusDescription = order.statusText.orEmpty()
                         )
-                    )
-                    Log.d(TAG, "  -> UPGRADED id=${existing.id} (now received)")
-                    ImportResult.UPGRADED
-                }
+                        reasons += "received"
+                    }
 
-                existing.trackingNumber.isBlank() && tn.isNotBlank() -> {
-                    repository.updatePackage(
-                        existing.copy(
+                    // Tracking-number write rules:
+                    //  - Quick mode: only ever fill in a blank one (current
+                    //    behavior — never trample an existing value).
+                    //  - Full Sync mode: also overwrite a non-blank TN if
+                    //    AliExpress now reports a different value, but only
+                    //    for orders that still carry an `ali:`-prefixed
+                    //    externalOrderId. The user's manual edits clear that
+                    //    prefix in AddEditViewModel.save(), so this path
+                    //    never touches anything the user typed by hand.
+                    val isAliOwned = (existing.externalOrderId ?: "")
+                        .startsWith("ali:")
+                    val incomingDiffers = tn.isNotBlank() &&
+                        tn != existing.trackingNumber
+                    val wasBlank = existing.trackingNumber.isBlank()
+                    val shouldUpdateTn = incomingDiffers && (
+                        wasBlank ||
+                        (mode == AliImportMode.FullSync && isAliOwned)
+                    )
+                    val tnChanged = shouldUpdateTn && !wasBlank
+                    if (shouldUpdateTn) {
+                        updated = updated.copy(
                             trackingNumber = tn,
-                            status = PackageStatus.ORDER_PLACED
+                            // don't downgrade DELIVERED above
+                            status = if (updated.status == PackageStatus.DELIVERED) updated.status
+                                     else PackageStatus.ORDER_PLACED,
+                            // Existing events belong to the old TN — wipe
+                            // them when the TN changes so the follow-up
+                            // refreshPackage() repopulates with the new
+                            // carrier history. Blank → non-blank: nothing
+                            // to wipe (events were already empty).
+                            lastEvent = if (tnChanged) null else updated.lastEvent,
+                            events = if (tnChanged) emptyList() else updated.events
                         )
-                    )
-                    repository.refreshPackage(existing.id)
-                    Log.d(TAG, "  -> UPGRADED id=${existing.id} (got tn)")
-                    ImportResult.UPGRADED
-                }
+                        reasons += if (wasBlank) "got tn" else "tn changed"
+                    }
+                    val gotTn = shouldUpdateTn
 
-                else -> {
-                    Log.d(TAG, "  -> SKIPPED (already imported, no change)")
-                    ImportResult.SKIPPED
+                    if (existing.name.isBlank() && order.name.isNotBlank()) {
+                        updated = updated.copy(name = order.name)
+                        reasons += "name"
+                    }
+
+                    if (existing.photoUri.isNullOrBlank() && !order.imageUrl.isNullOrBlank()) {
+                        val photo = imageDownloader.download(order.imageUrl, fileBaseName = order.orderId)
+                        if (!photo.isNullOrBlank()) {
+                            updated = updated.copy(photoUri = photo)
+                            reasons += "photo"
+                        }
+                    }
+
+                    if (reasons.isEmpty()) {
+                        Log.d(TAG, "  -> SKIPPED (already imported, no change)")
+                        ImportResult.SKIPPED
+                    } else {
+                        repository.updatePackage(updated)
+                        if (gotTn) repository.refreshPackage(existing.id)
+                        Log.d(TAG, "  -> UPGRADED id=${existing.id} (${reasons.joinToString()})")
+                        ImportResult.UPGRADED
+                    }
                 }
             }
         }.getOrElse {

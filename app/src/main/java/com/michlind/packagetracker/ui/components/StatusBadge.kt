@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -96,7 +97,15 @@ fun StatusBadge(
                 tint = color,
                 modifier = Modifier
                     .size(iconSize)
-                    .offset(x = (travel * fraction) - iconSize)
+                    // Lambda overload — defers reading `fraction` (a State)
+                    // until placement, so the animation drives layout
+                    // without recomposing the Icon on every frame.
+                    .offset {
+                        IntOffset(
+                            x = ((travel * fraction) - iconSize).roundToPx(),
+                            y = 0
+                        )
+                    }
                     .align(Alignment.CenterStart)
             )
         }

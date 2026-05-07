@@ -11,12 +11,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * User toggle for status-update notifications. When off, the periodic
- * refresh worker skips the notification call (the row still updates
- * silently in the DB). Default: on.
+ * User toggle for the auto-sync that runs whenever the app comes to the
+ * foreground (cold start + resume from background). When off, the user has
+ * to pull updates manually from the Refresh sheet. Default: on.
  */
 @Singleton
-class NotificationPreferenceRepository @Inject constructor(
+class SyncOnResumePreferenceRepository @Inject constructor(
     @ApplicationContext context: Context
 ) {
     private val prefs: SharedPreferences =
@@ -32,6 +32,6 @@ class NotificationPreferenceRepository @Inject constructor(
 
     private companion object {
         const val PREFS_NAME = "ptracker_settings"
-        const val KEY_ENABLED = "notifications_enabled"
+        const val KEY_ENABLED = "sync_on_resume_enabled"
     }
 }

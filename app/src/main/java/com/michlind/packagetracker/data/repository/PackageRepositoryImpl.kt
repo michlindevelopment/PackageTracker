@@ -47,6 +47,9 @@ class PackageRepositoryImpl @Inject constructor(
     override suspend fun getNonReceivedPackages(): List<TrackedPackage> =
         dao.getNonReceivedPackages().map { it.toDomain() }
 
+    override suspend fun getPackagesEligibleForRefresh(): List<TrackedPackage> =
+        dao.getPackagesEligibleForRefresh().map { it.toDomain() }
+
     override suspend fun addPackage(pkg: TrackedPackage): Long {
         val entity = pkg.toEntity()
         return dao.insert(entity)
@@ -78,7 +81,9 @@ class PackageRepositoryImpl @Inject constructor(
                     description = trace.desc.orEmpty(),
                     standardDescription = trace.standerdDesc.orEmpty(),
                     actionCode = trace.actionCode.orEmpty(),
-                    groupDescription = trace.group?.nodeDesc
+                    groupDescription = trace.group?.nodeDesc,
+                    groupCurrentIconUrl = trace.group?.currentIconUrl,
+                    groupHistoryIconUrl = trace.group?.historyIconUrl
                 )
             } ?: emptyList()
 
@@ -124,6 +129,15 @@ class PackageRepositoryImpl @Inject constructor(
             .map { it.removePrefix("ali:") }
             .filter { it.isNotBlank() }
             .toSet()
+
+    override suspend fun getBlankTrackingPackageIds(): List<Long> =
+        dao.getBlankTrackingPackageIds()
+
+    override suspend fun getNonReceivedTrackingSnapshot(): Map<Long, String> =
+        dao.getNonReceivedTrackingSnapshot().associate { it.id to it.trackingNumber }
+
+    override suspend fun getFirstByTrackingNumber(trackingNumber: String): TrackedPackage? =
+        dao.getByTrackingNumber(trackingNumber).firstOrNull()?.toDomain()
 
     override suspend fun refreshTrackingNumber(trackingNumber: String): Result<Map<Long, Boolean>> {
         val existingRows = dao.getByTrackingNumber(trackingNumber)

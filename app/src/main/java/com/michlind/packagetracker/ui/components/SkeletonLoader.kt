@@ -31,7 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun ShimmerBrush(): Brush {
+fun shimmerBrush(): Brush {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val translateAnim by transition.animateFloat(
         initialValue = 0f,
@@ -56,7 +56,7 @@ fun ShimmerBrush(): Brush {
 
 @Composable
 fun SkeletonPackageCard() {
-    val brush = ShimmerBrush()
+    val brush = shimmerBrush()
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -111,7 +111,7 @@ fun SkeletonPackageCard() {
 
 @Composable
 fun SkeletonDetailHeader() {
-    val brush = ShimmerBrush()
+    val brush = shimmerBrush()
     Column(modifier = Modifier.padding(16.dp)) {
         Box(
             modifier = Modifier

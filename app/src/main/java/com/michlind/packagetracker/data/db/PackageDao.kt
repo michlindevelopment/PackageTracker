@@ -8,6 +8,11 @@ import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
+data class TrackingSnapshotRow(
+    val id: Long,
+    val trackingNumber: String
+)
+
 @Dao
 interface PackageDao {
 
@@ -30,6 +35,13 @@ interface PackageDao {
     @Query("SELECT * FROM packages WHERE isReceived = 0 AND status != 'NOT_YET_SENT'")
     suspend fun getNonReceivedPackages(): List<PackageEntity>
 
+    // Used by refresh paths (manual + background worker). Includes packages the
+    // user marked received early but whose carrier status hasn't actually
+    // reached DELIVERED yet — Cainiao may still have new events for them.
+    // Excludes NOT_YET_SENT (no real TN to query) and DELIVERED (terminal).
+    @Query("SELECT * FROM packages WHERE trackingNumber != '' AND status NOT IN ('NOT_YET_SENT', 'DELIVERED')")
+    suspend fun getPackagesEligibleForRefresh(): List<PackageEntity>
+
     @Query("SELECT * FROM packages WHERE trackingNumber = :trackingNumber")
     suspend fun getByTrackingNumber(trackingNumber: String): List<PackageEntity>
 
@@ -38,6 +50,15 @@ interface PackageDao {
 
     @Query("SELECT externalOrderId FROM packages WHERE externalOrderId LIKE 'ali:%' AND trackingNumber != ''")
     suspend fun getAliExternalOrderIdsWithTracking(): List<String>
+
+    @Query("SELECT id FROM packages WHERE trackingNumber = '' AND isReceived = 0")
+    suspend fun getBlankTrackingPackageIds(): List<Long>
+
+    // (id, trackingNumber) for every non-received package — used by Full
+    // Sync to diff tracking numbers before/after an import and refresh
+    // anything that changed.
+    @Query("SELECT id, trackingNumber FROM packages WHERE isReceived = 0")
+    suspend fun getNonReceivedTrackingSnapshot(): List<TrackingSnapshotRow>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: PackageEntity): Long

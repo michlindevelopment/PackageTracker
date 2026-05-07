@@ -12,9 +12,18 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
+
+/**
+ * Thrown when Cainiao's anti-bot wall serves us a CAPTCHA page instead of
+ * tracking JSON (header `bxpunish: 1`). Catching it explicitly lets the UI
+ * tell the user "you've been rate-limited, try again later" instead of
+ * showing the generic "failed to refresh" message.
+ */
+class CainiaoRateLimitException(message: String) : IOException(message)
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -43,7 +52,20 @@ object NetworkModule {
                     .header("Accept-Language", "en-US,en;q=0.9")
                     .header("Referer", "https://global.cainiao.com/")
                     .build()
-                chain.proceed(request)
+                val response = chain.proceed(request)
+                // Cainiao's anti-bot ("baxia") replies with `bxpunish: 1`
+                // and a CAPTCHA HTML body when it decides we're hammering
+                // the endpoint. Detect it here and turn it into a typed
+                // exception so the UI can show a sensible message instead
+                // of letting Gson explode on the HTML body.
+                if (response.header("bxpunish") == "1") {
+                    response.close()
+                    throw CainiaoRateLimitException(
+                        "Cainiao temporarily blocked the request (bot " +
+                            "detection). Wait a few minutes and try again."
+                    )
+                }
+                response
             }
             .addInterceptor(logging)
             .connectTimeout(15, TimeUnit.SECONDS)

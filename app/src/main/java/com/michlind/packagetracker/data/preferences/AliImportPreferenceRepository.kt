@@ -2,6 +2,7 @@ package com.michlind.packagetracker.data.preferences
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,7 +38,7 @@ class AliImportPreferenceRepository @Inject constructor(
 
     private fun saveAndPublish(key: String, raw: Int, flow: MutableStateFlow<Int>) {
         val clamped = raw.coerceIn(0, MAX_PAGES)
-        prefs.edit().putInt(key, clamped).apply()
+        prefs.edit { putInt(key, clamped) }
         flow.value = clamped
     }
 

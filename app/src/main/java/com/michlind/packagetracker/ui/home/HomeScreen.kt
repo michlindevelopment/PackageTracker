@@ -1,18 +1,21 @@
 package com.michlind.packagetracker.ui.home
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,8 +29,12 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
@@ -35,32 +42,30 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.RichTooltip
-import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,12 +91,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.michlind.packagetracker.R
+import com.michlind.packagetracker.domain.model.SortMode
 import com.michlind.packagetracker.domain.model.TrackedPackage
+import com.michlind.packagetracker.ui.aliimport.BgAliImportWebView
 import com.michlind.packagetracker.ui.components.EmptyState
 import com.michlind.packagetracker.ui.components.PackageCard
 import com.michlind.packagetracker.ui.components.StatusBadge
 import com.michlind.packagetracker.ui.components.colorAndIcon
-import com.michlind.packagetracker.util.DateUtils
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,6 +117,10 @@ fun HomeScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val refreshingTn by viewModel.refreshingTrackingNumber.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
+    val bgImportActive by viewModel.bgImportActive.collectAsStateWithLifecycle()
+    val bgImportProgress by viewModel.bgImportProgress.collectAsStateWithLifecycle()
+    var sortMenuOpen by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
@@ -124,6 +134,10 @@ fun HomeScreen(
     var actionMenuPkg by remember { mutableStateOf<TrackedPackage?>(null) }
     // Picker shown when the FAB is tapped: choose auto-import vs. manual add.
     var showAddOptions by remember { mutableStateOf(false) }
+    // Picker shown when the Refresh icon is tapped: choose between just
+    // syncing carrier status, a quick AliExpress fetch + sync, or a full
+    // re-scan + sync.
+    var showRefreshOptions by remember { mutableStateOf(false) }
     // Delete-confirmation state, shown only after the user picks "Delete" from the menu
     var pendingDeleteGroup by remember { mutableStateOf<PackageGroup?>(null) }
     var pendingDeletePkg by remember { mutableStateOf<TrackedPackage?>(null) }
@@ -140,11 +154,14 @@ fun HomeScreen(
     }
 
     // Triggered when the user finishes an AliExpress import — switch to the
-    // In Transit tab and refresh tracking statuses for the newly-imported items.
+    // In Transit tab and pull fresh Cainiao events. The manual import itself
+    // runs in FullSync mode (visible scrape covers new orders AND tracking-
+    // number changes for existing ones), so all that's left here is a
+    // carrier status pass — no second AliExpress scrape needed.
     LaunchedEffect(refreshAndShowInTransit) {
         if (refreshAndShowInTransit) {
             pagerState.animateScrollToPage(1)
-            viewModel.refreshAll()
+            viewModel.syncStatus()
             onRefreshConsumed()
         }
     }
@@ -164,7 +181,7 @@ fun HomeScreen(
             ?: stringResource(R.string.add_package)
         val sheetState = rememberModalBottomSheetState()
         ModalBottomSheet(
-            onDismissRequest = { actionMenuGroup = null; actionMenuPkg = null },
+            onDismissRequest = { },
             sheetState = sheetState
         ) {
             Column(modifier = Modifier.padding(bottom = 24.dp)) {
@@ -218,7 +235,7 @@ fun HomeScreen(
         val msgRes = if (newState) R.string.confirm_mark_received_message
                      else R.string.confirm_mark_not_received_message
         AlertDialog(
-            onDismissRequest = { pendingToggleGroup = null; pendingTogglePkg = null },
+            onDismissRequest = { },
             title = { Text(stringResource(titleRes)) },
             text = { Text(stringResource(msgRes)) },
             confirmButton = {
@@ -236,8 +253,6 @@ fun HomeScreen(
             },
             dismissButton = {
                 TextButton(onClick = {
-                    pendingToggleGroup = null
-                    pendingTogglePkg = null
                 }) {
                     Text(stringResource(R.string.cancel))
                 }
@@ -251,7 +266,7 @@ fun HomeScreen(
         val deletedMsg = if (count > 1) "$count packages deleted" else stringResource(R.string.package_deleted)
         val undoLabel = stringResource(R.string.undo)
         AlertDialog(
-            onDismissRequest = { pendingDeleteGroup = null; pendingDeletePkg = null },
+            onDismissRequest = { },
             title = { Text(if (count > 1) "Delete $count packages?" else "Delete package?") },
             text = { Text(stringResource(R.string.confirm_delete_message)) },
             confirmButton = {
@@ -312,8 +327,52 @@ fun HomeScreen(
                     title = "Add manually",
                     subtitle = "Enter a tracking number yourself",
                     onClick = {
-                        showAddOptions = false
                         onAddClick()
+                    }
+                )
+            }
+        }
+    }
+
+    if (showRefreshOptions) {
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { showRefreshOptions = false },
+            sheetState = sheetState
+        ) {
+            Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                Text(
+                    text = "Refresh",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                BottomSheetActionRow(
+                    icon = Icons.Default.Sync,
+                    title = "Sync tracking status",
+                    subtitle = "Update delivery progress for tracked packages",
+                    onClick = {
+                        showRefreshOptions = false
+                        viewModel.syncStatus()
+                    }
+                )
+                BottomSheetActionRow(
+                    icon = Icons.Default.Bolt,
+                    title = "Quick",
+                    subtitle = "Pull new AliExpress orders",
+                    onClick = {
+                        showRefreshOptions = false
+                        viewModel.quickFetchThenSyncStatus()
+                    }
+                )
+                BottomSheetActionRow(
+                    icon = Icons.Default.CloudSync,
+                    title = "Full",
+                    subtitle = "Re-scan every order — catches tracking numbers " +
+                        "that AliExpress changed after shipping",
+                    onClick = {
+                        showRefreshOptions = false
+                        viewModel.fullFetchThenSyncStatus()
                     }
                 )
             }
@@ -326,7 +385,7 @@ fun HomeScreen(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
                     IconButton(
-                        onClick = { if (!isRefreshing) viewModel.refreshAll() },
+                        onClick = { if (!isRefreshing) showRefreshOptions = true },
                         enabled = !isRefreshing
                     ) {
                         if (isRefreshing) {
@@ -336,6 +395,31 @@ fun HomeScreen(
                             )
                         } else {
                             Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
+                        }
+                    }
+                    Box {
+                        IconButton(onClick = { sortMenuOpen = true }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Sort,
+                                contentDescription = "Sort"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = sortMenuOpen,
+                            onDismissRequest = { sortMenuOpen = false }
+                        ) {
+                            SortMenuItem("Closest to delivery", SortMode.CLOSEST_TO_DELIVERY, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
+                            SortMenuItem("Last shipped", SortMode.LAST_SHIPPED, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
+                            SortMenuItem("First shipped", SortMode.FIRST_SHIPPED, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
+                            SortMenuItem("A → Z", SortMode.A_TO_Z, sortMode) {
+                                viewModel.setSortMode(it); sortMenuOpen = false
+                            }
                         }
                     }
                     IconButton(onClick = onSettingsClick) {
@@ -354,7 +438,20 @@ fun HomeScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
+        Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            // Sits behind the Column below — children added later in a Box
+            // are drawn on top, so the visible UI stays interactive while
+            // this 1×1 alpha-0 WebView quietly runs the import script.
+            if (bgImportActive) {
+                BgAliImportWebView(
+                    bridge = viewModel.bgBridge,
+                    onSkipped = viewModel::onBgImportSkipped,
+                    onError = viewModel::onBgImportError,
+                    onAborted = viewModel::onBgImportAborted,
+                    prepare = viewModel::prepareBgImport
+                )
+            }
+        Column(modifier = Modifier.fillMaxSize()) {
             PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
                 Tab(
                     selected = pagerState.currentPage == 0,
@@ -371,6 +468,26 @@ fun HomeScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
                     text = { Text(stringResource(R.string.tab_received)) }
                 )
+            }
+
+            // Cache the last non-null progress so the slide-out animation
+            // still has content to render after the chain clears the flow.
+            var lastProgress by remember { mutableStateOf<BgImportProgress?>(null) }
+            LaunchedEffect(bgImportProgress) {
+                bgImportProgress?.let { lastProgress = it }
+            }
+            AnimatedVisibility(
+                visible = bgImportProgress != null,
+                enter = expandVertically(
+                    expandFrom = Alignment.Top,
+                    animationSpec = tween(durationMillis = 240)
+                ) + fadeIn(animationSpec = tween(durationMillis = 240)),
+                exit = shrinkVertically(
+                    shrinkTowards = Alignment.Top,
+                    animationSpec = tween(durationMillis = 200)
+                ) + fadeOut(animationSpec = tween(durationMillis = 200))
+            ) {
+                lastProgress?.let { BgImportProgressBanner(it) }
             }
 
             HorizontalPager(
@@ -404,6 +521,7 @@ fun HomeScreen(
                     )
                 }
             }
+        }
         }
     }
 }
@@ -686,6 +804,22 @@ private fun SubPackageRow(pkg: TrackedPackage, onClick: () -> Unit) {
 }
 
 @Composable
+private fun SortMenuItem(
+    label: String,
+    mode: SortMode,
+    current: SortMode,
+    onPick: (SortMode) -> Unit
+) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        onClick = { onPick(mode) },
+        trailingIcon = if (mode == current) {
+            { Icon(Icons.Default.Check, contentDescription = null) }
+        } else null
+    )
+}
+
+@Composable
 private fun BottomSheetActionRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
@@ -716,6 +850,76 @@ private fun BottomSheetActionRow(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
             )
         }
+    }
+}
+
+// Banner shown under the tab row while a Quick / Full sync's AliExpress
+// scrape is in progress. Mirrors the manual import overlay's content
+// (status text, progress bar, added/upgraded/skipped/failed counters) so
+// the user gets the same feedback in the home flow.
+@Composable
+private fun BgImportProgressBanner(progress: BgImportProgress) {
+    androidx.compose.material3.Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 2.dp
+    ) {
+        // Always render the same set of children — spinner+text, progress
+        // bar, counters — so the banner has a constant height regardless of
+        // which phase we're in. Indeterminate progress while total is
+        // unknown; counters show 0 until the first order completes.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = progress.statusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            val total = progress.total
+            if (total != null && total > 0) {
+                LinearProgressIndicator(
+                    progress = { (progress.current.toFloat() / total).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
+            ) {
+                BgImportCounter("Added", progress.added, MaterialTheme.colorScheme.primary)
+                BgImportCounter("Upgraded", progress.upgraded, MaterialTheme.colorScheme.tertiary)
+                BgImportCounter("Skipped", progress.skipped, MaterialTheme.colorScheme.onSurfaceVariant)
+                BgImportCounter("Failed", progress.failed, MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BgImportCounter(label: String, value: Int, color: androidx.compose.ui.graphics.Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall)
+        Text(
+            value.toString(),
+            style = MaterialTheme.typography.titleSmall,
+            color = color,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 

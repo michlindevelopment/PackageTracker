@@ -1,5 +1,6 @@
 package com.michlind.packagetracker.ui.contributors
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -64,6 +65,7 @@ private const val SPEED_UP_FACTOR = 1.10f
 // game stays fun rather than punishing as the circle gets tiny.
 private const val HIT_RADIUS_MULTIPLIER = 1.5f
 
+@SuppressLint("DiscouragedApi", "LocalContextResourcesRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContributorsScreen(onBack: () -> Unit) {

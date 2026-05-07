@@ -42,6 +42,10 @@ import javax.inject.Inject
 * Better login screen - X
 * Long click delete mark as received - V
 * Bug - package both in no yet sent and delivered - V
+* During import keep screen on - V
+* Done and Start sometimes not working - V
+* Update items that received but in received status - V
+* Add option to reimport for items without tracking number
 * */
 
 @AndroidEntryPoint

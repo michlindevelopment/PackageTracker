@@ -4,9 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.michlind.packagetracker.data.preferences.AliImportPreferenceRepository
+import com.michlind.packagetracker.domain.model.AliImportMode
 import com.michlind.packagetracker.domain.model.AliOrderImport
 import com.michlind.packagetracker.domain.model.ImportResult
-import com.michlind.packagetracker.domain.repository.PackageRepository
 import com.michlind.packagetracker.domain.usecase.ImportAliOrderUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +49,6 @@ sealed interface AliImportState {
 @HiltViewModel
 class AliImportViewModel @Inject constructor(
     private val importOrder: ImportAliOrderUseCase,
-    private val repository: PackageRepository,
     private val importPrefs: AliImportPreferenceRepository,
     private val gson: Gson
 ) : ViewModel() {
@@ -90,13 +89,17 @@ class AliImportViewModel @Inject constructor(
     }
 
     suspend fun beginImport() {
-        // Seed the JS bridge with orderIds we already have a tracking number
-        // for, so the script can skip the per-order iframe lookup for them.
-        val ids = withContext(Dispatchers.IO) {
-            runCatching { repository.getImportedAliOrderIdsWithTracking() }
-                .getOrDefault(emptySet())
-        }
-        bridge.knownOrderIdsJson = gson.toJson(ids)
+        // Flip to Importing immediately (before the suspending DB read) so the
+        // Start button visibly disables on the first tap — otherwise the button
+        // stays ReadyToImport for the duration of the bridge seed and feels
+        // unresponsive.
+        _state.value = AliImportState.Importing(statusText = "Starting…")
+
+        // Manual import runs in FullSync mode — re-read every order from the
+        // iframe so we also catch tracking-number changes for orders we've
+        // imported before (AliExpress occasionally reassigns a TN after
+        // shipping). Empty seed = JS doesn't skip anyone.
+        bridge.knownOrderIdsJson = "[]"
 
         // User-tunable per-tab "View more" page budgets.
         bridge.configOverridesJson = gson.toJson(
@@ -106,8 +109,6 @@ class AliImportViewModel @Inject constructor(
                 "processedMaxPasses" to importPrefs.processedPages.value
             )
         )
-
-        _state.value = AliImportState.Importing(statusText = "Starting…")
     }
 
     fun reset() {
@@ -147,7 +148,7 @@ class AliImportViewModel @Inject constructor(
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
                         val order = gson.fromJson(event.json, AliOrderImport::class.java)
-                        importOrder(order)
+                        importOrder(order, AliImportMode.FullSync)
                     }.getOrElse { ImportResult.FAILED }
                 }
                 val snapshot = _state.value
