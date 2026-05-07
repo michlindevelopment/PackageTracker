@@ -185,6 +185,23 @@ fun HomeScreen(
         }
     }
 
+    // Keep the screen awake while the bg AliExpress import is running —
+    // the WebView walks the order list and per-order iframe scrape, which
+    // can take a minute or two, and the system will suspend the WebView's
+    // JS timers if the screen turns off mid-import.
+    val context = LocalContext.current
+    DisposableEffect(bgImportActive) {
+        val window = (context as? Activity)?.window
+        if (bgImportActive) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     // Update-available popup. Shown on cold launch when GitHub has a newer
     // release than the installed version. "Update" routes to Settings —
     // SettingsScreen already auto-runs checkForUpdates() on entry, lands on
