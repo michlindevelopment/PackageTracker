@@ -27,8 +27,8 @@ class SortPreferenceRepository @Inject constructor(
     }
 
     private fun loadMode(): SortMode {
-        val raw = prefs.getString(KEY_SORT_MODE, null) ?: return SortMode.LAST_SHIPPED
-        return runCatching { SortMode.valueOf(raw) }.getOrDefault(SortMode.LAST_SHIPPED)
+        val raw = prefs.getString(KEY_SORT_MODE, null) ?: return SortMode.FIRST_SHIPPED
+        return runCatching { SortMode.valueOf(raw) }.getOrDefault(SortMode.FIRST_SHIPPED)
     }
 
     private companion object {

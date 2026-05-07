@@ -663,8 +663,7 @@ private fun LazyListScope.smsItems(
     if (messages.isEmpty()) {
         item {
             Text(
-                text = "No SMS found yet for $trackingNumber.\nThey'll appear " +
-                    "here after the next sync.",
+                text = "No SMS found yet for $trackingNumber",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center,
