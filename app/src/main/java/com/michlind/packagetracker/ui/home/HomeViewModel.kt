@@ -32,7 +32,7 @@ data class PackageGroup(
 ) {
     val isMultiple: Boolean get() = packages.size > 1
     val displayName: String
-        get() = if (isMultiple) "Multi - ${packages.size} items"
+        get() = if (isMultiple) "Combined package - ${packages.size} items"
                 else packages.first().name.ifBlank { trackingNumber.ifBlank { "Package" } }
 }
 
