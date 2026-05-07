@@ -76,6 +76,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -452,22 +453,29 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                // If the user is already signed in to AliExpress, the
-                // "Sign in" option in the sheet has nothing to offer —
-                // background sync handles new orders automatically. Skip
-                // the sheet and go straight to manual add. Same loose
-                // sign=y heuristic used elsewhere in the app.
-                val cookies = CookieManager.getInstance()
-                    .getCookie("https://www.aliexpress.com").orEmpty()
-                val signedIn = cookies.contains("sign=y")
-                if (signedIn) {
-                    onAddClick()
-                } else {
-                    showAddOptions = true
+            // Dim and ignore taps while a bg import is running — adding a
+            // new package mid-import would race the import's own writes
+            // and just confuses the bg-import banner counters.
+            FloatingActionButton(
+                modifier = Modifier.alpha(if (bgImportActive) 0.5f else 1f),
+                onClick = onClick@{
+                    if (bgImportActive) return@onClick
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    // If the user is already signed in to AliExpress, the
+                    // "Sign in" option in the sheet has nothing to offer —
+                    // background sync handles new orders automatically. Skip
+                    // the sheet and go straight to manual add. Same loose
+                    // sign=y heuristic used elsewhere in the app.
+                    val cookies = CookieManager.getInstance()
+                        .getCookie("https://www.aliexpress.com").orEmpty()
+                    val signedIn = cookies.contains("sign=y")
+                    if (signedIn) {
+                        onAddClick()
+                    } else {
+                        showAddOptions = true
+                    }
                 }
-            }) {
+            ) {
                 Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_package))
             }
         },
