@@ -121,6 +121,7 @@ fun HomeScreen(
     val refreshingTn by viewModel.refreshingTrackingNumber.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val captchaTrackingNumber by viewModel.captchaTrackingNumber.collectAsStateWithLifecycle()
+    val updateAvailable by viewModel.updateAvailable.collectAsStateWithLifecycle()
     val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
     val bgImportActive by viewModel.bgImportActive.collectAsStateWithLifecycle()
     val bgImportProgress by viewModel.bgImportProgress.collectAsStateWithLifecycle()
@@ -178,6 +179,34 @@ fun HomeScreen(
             viewModel.fullFetchThenSyncStatus()
             onRefreshConsumed()
         }
+    }
+
+    // Update-available popup. Shown on cold launch when GitHub has a newer
+    // release than the installed version. "Update" routes to Settings —
+    // SettingsScreen already auto-runs checkForUpdates() on entry, lands on
+    // the Available state, and shows the big Update button (which handles
+    // install permission, download progress, etc.). "Later" dismisses for
+    // this app session; next cold launch re-checks.
+    val update = updateAvailable
+    if (update != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissUpdate() },
+            title = { Text("Update available") },
+            text = {
+                Text("Version ${update.latestVersion} is available.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissUpdate()
+                    onSettingsClick()
+                }) { Text("Update") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissUpdate() }) {
+                    Text("Will do it later")
+                }
+            }
+        )
     }
 
     // Action menu — appears on long-press; lets the user choose Delete or toggle received

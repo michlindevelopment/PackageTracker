@@ -16,8 +16,10 @@ import com.michlind.packagetracker.domain.model.ImportResult
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.SortMode
 import com.michlind.packagetracker.domain.model.TrackedPackage
+import com.michlind.packagetracker.domain.model.UpdateCheckResult
 import com.michlind.packagetracker.domain.repository.PackageRepository
 import com.michlind.packagetracker.domain.usecase.AddPackageUseCase
+import com.michlind.packagetracker.domain.usecase.CheckForUpdateUseCase
 import com.michlind.packagetracker.domain.usecase.DeletePackageUseCase
 import com.michlind.packagetracker.domain.usecase.GetActivePackagesUseCase
 import com.michlind.packagetracker.domain.usecase.GetNotYetSentPackagesUseCase
@@ -139,6 +141,7 @@ class HomeViewModel @Inject constructor(
     private val importOrder: ImportAliOrderUseCase,
     private val importPrefs: AliImportPreferenceRepository,
     private val syncOnResumePrefs: SyncOnResumePreferenceRepository,
+    private val checkForUpdate: CheckForUpdateUseCase,
     private val gson: Gson
 ) : ViewModel() {
 
@@ -186,6 +189,13 @@ class HomeViewModel @Inject constructor(
     // Cleared once the snackbar is dismissed (via clearError).
     private val _captchaTrackingNumber = MutableStateFlow<String?>(null)
     val captchaTrackingNumber: StateFlow<String?> = _captchaTrackingNumber.asStateFlow()
+
+    // Populated on cold start by checkForUpdate(). When non-null, HomeScreen
+    // pops an "Update available" dialog with Update / Later buttons.
+    // dismissUpdate() clears it for the rest of this app session — the next
+    // cold start re-checks and re-pops if still applicable.
+    private val _updateAvailable = MutableStateFlow<UpdateCheckResult.Available?>(null)
+    val updateAvailable: StateFlow<UpdateCheckResult.Available?> = _updateAvailable.asStateFlow()
 
     // ─── Background AliExpress import (chained after refreshAll) ─────────────
     // Set true while HomeScreen should host the hidden WebView. The WebView's
@@ -235,6 +245,18 @@ class HomeViewModel @Inject constructor(
 
     init {
         ProcessLifecycleOwner.get().lifecycle.addObserver(processLifecycleObserver)
+
+        // One-shot update check on cold start. Failures are silent — we'd
+        // rather not nag the user with a network-error snackbar just because
+        // they're offline; the Settings screen has an explicit "Check for
+        // updates" button if they want to retry by hand.
+        viewModelScope.launch {
+            checkForUpdate().getOrNull()?.let { result ->
+                if (result is UpdateCheckResult.Available) {
+                    _updateAvailable.value = result
+                }
+            }
+        }
 
         viewModelScope.launch {
             bgEventChannel.consumeAsFlow().collect { event ->
@@ -589,6 +611,10 @@ class HomeViewModel @Inject constructor(
     fun clearError() {
         _errorMessage.value = null
         _captchaTrackingNumber.value = null
+    }
+
+    fun dismissUpdate() {
+        _updateAvailable.value = null
     }
 
     override fun onCleared() {
