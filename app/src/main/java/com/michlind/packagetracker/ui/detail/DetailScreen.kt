@@ -1,7 +1,12 @@
 package com.michlind.packagetracker.ui.detail
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,18 +20,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,8 +44,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipBox
@@ -52,11 +65,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -70,6 +95,7 @@ import kotlinx.coroutines.launch
 import com.michlind.packagetracker.R
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
+import com.michlind.packagetracker.domain.model.TrackingSms
 import com.michlind.packagetracker.ui.components.SkeletonDetailHeader
 import com.michlind.packagetracker.ui.components.TimelineItem
 import com.michlind.packagetracker.ui.components.colorAndIcon
@@ -90,10 +116,29 @@ fun DetailScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
+    val smsList by viewModel.smsList.collectAsStateWithLifecycle()
+    val hasSmsPermission by viewModel.hasSmsPermission.collectAsStateWithLifecycle()
     val haptic = LocalHapticFeedback.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableStateOf(0) }
 
-    LaunchedEffect(packageId) { viewModel.load(packageId) }
+    val smsPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.refreshSmsPermission()
+        if (granted) {
+            // Don't make the user wait for the next syncStatus() to see
+            // anything — kick off a one-shot scan for just this TN.
+            viewModel.scanSmsForCurrent()
+        }
+    }
+
+    LaunchedEffect(packageId) {
+        viewModel.load(packageId)
+        viewModel.refreshSmsPermission()
+    }
     LaunchedEffect(deleted) { if (deleted) onBack() }
 
     if (showDeleteDialog) {
@@ -163,7 +208,8 @@ fun DetailScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         when (val state = uiState) {
             is DetailUiState.Loading -> {
@@ -187,7 +233,19 @@ fun DetailScreen(
                 DetailContent(
                     pkg = state.pkg,
                     isRefreshing = isRefreshing,
-                    paddingValues = paddingValues
+                    paddingValues = paddingValues,
+                    selectedTab = selectedTab,
+                    onTabSelected = { selectedTab = it },
+                    smsMessages = smsList,
+                    hasSmsPermission = hasSmsPermission,
+                    onRequestSmsPermission = {
+                        smsPermissionLauncher.launch(Manifest.permission.READ_SMS)
+                    },
+                    onCopyMessage = {
+                        snackbarScope.launch {
+                            snackbarHostState.showSnackbar("Copied to clipboard")
+                        }
+                    }
                 )
             }
         }
@@ -199,7 +257,13 @@ fun DetailScreen(
 private fun DetailContent(
     pkg: TrackedPackage,
     isRefreshing: Boolean,
-    paddingValues: PaddingValues
+    paddingValues: PaddingValues,
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit,
+    smsMessages: List<TrackingSms>,
+    hasSmsPermission: Boolean,
+    onRequestSmsPermission: () -> Unit,
+    onCopyMessage: () -> Unit
 ) {
     val nameTooltipState = rememberTooltipState(isPersistent = true)
     val tooltipScope = rememberCoroutineScope()
@@ -371,43 +435,68 @@ private fun DetailContent(
             )
         }
 
-        // Divider + "Timeline" section header
+        // Tabs — sit right under the Shipping Progress card and replace
+        // the old "Tracking History" section header. The bottom of this
+        // LazyColumn is what the tabs control.
         item {
-            Text(
-                text = "Tracking History",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+            PrimaryTabRow(
+                selectedTabIndex = selectedTab,
+                modifier = Modifier.padding(top = 8.dp)
+            ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { onTabSelected(0) },
+                    text = {
+                        // Inline icon + label in a Row so the icon sits to
+                        // the left of the text — Tab's built-in `icon` slot
+                        // stacks icon ABOVE text, which we don't want.
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Timeline,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text("Tracking")
+                        }
+                    }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { onTabSelected(1) },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Message,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            val label = if (smsMessages.isEmpty()) "SMS"
+                                else "SMS (${smsMessages.size})"
+                            Text(label)
+                        }
+                    }
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        if (selectedTab == 0) {
+            trackingHistoryItems(events = pkg.events)
+        } else {
+            smsItems(
+                trackingNumber = pkg.trackingNumber,
+                messages = smsMessages,
+                hasPermission = hasSmsPermission,
+                onRequestPermission = onRequestSmsPermission,
+                onCopyMessage = onCopyMessage
             )
         }
-
-        // Timeline events
-        if (pkg.events.isEmpty()) {
-            item {
-                Text(
-                    text = "No events yet",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    modifier = Modifier.padding(horizontal = 24.dp)
-                )
-            }
-        } else {
-            items(pkg.events.indices.toList()) { index ->
-                val event = pkg.events[index]
-                // Events are reverse-chronological (newest at index 0), so
-                // the *next* chronological step for events[i] is the row
-                // above it: events[i - 1]. Top of the list has no next step.
-                val nextEventTime = if (index == 0) null
-                    else pkg.events[index - 1].time
-                TimelineItem(
-                    event = event,
-                    isFirst = index == 0,
-                    isLast = index == pkg.events.lastIndex,
-                    nextEventTime = nextEventTime,
-                    modifier = Modifier.padding(horizontal = 20.dp)
-                )
-            }
-        }
-
     }
 }
 
@@ -496,6 +585,224 @@ private fun ProgressStepper(currentStatus: PackageStatus, modifier: Modifier = M
                 strokeCap = StrokeCap.Round
             )
         }
+    }
+}
+
+private fun LazyListScope.trackingHistoryItems(
+    events: List<com.michlind.packagetracker.domain.model.TrackingEvent>
+) {
+    if (events.isEmpty()) {
+        item {
+            Text(
+                text = "No events yet",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
+            )
+        }
+    } else {
+        items(events.indices.toList()) { index ->
+            val event = events[index]
+            // Events are reverse-chronological (newest at index 0), so the
+            // *next* chronological step for events[i] is the row above it:
+            // events[i - 1]. Top of the list has no next step.
+            val nextEventTime = if (index == 0) null else events[index - 1].time
+            TimelineItem(
+                event = event,
+                isFirst = index == 0,
+                isLast = index == events.lastIndex,
+                nextEventTime = nextEventTime,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+        }
+    }
+}
+
+private fun LazyListScope.smsItems(
+    trackingNumber: String,
+    messages: List<TrackingSms>,
+    hasPermission: Boolean,
+    onRequestPermission: () -> Unit,
+    onCopyMessage: () -> Unit
+) {
+    if (!hasPermission) {
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Message,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                    modifier = Modifier.size(64.dp)
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Allow SMS access",
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Grant SMS read access so we can match incoming " +
+                        "carrier notifications to this tracking number.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(20.dp))
+                Button(onClick = onRequestPermission) { Text("Allow access") }
+            }
+        }
+        return
+    }
+
+    if (messages.isEmpty()) {
+        item {
+            Text(
+                text = "No SMS found yet for $trackingNumber.\nThey'll appear " +
+                    "here after the next sync.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp)
+            )
+        }
+        return
+    }
+
+    items(messages, key = { it.id }) { sms ->
+        SmsCard(sms = sms, onCopied = onCopyMessage)
+    }
+    item {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Long-press a message to copy it.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(8.dp)
+        )
+    }
+}
+
+// Hebrew U+0590-U+05FF, Arabic U+0600-U+06FF — flip the layout for
+// messages whose body has any RTL characters so sender / timestamp /
+// body all align as a real-world SMS app would render them.
+private fun isRtlText(text: String): Boolean =
+    text.any { it.code in 0x0590..0x05FF || it.code in 0x0600..0x06FF }
+
+private val URL_REGEX = Regex("""https?://\S+""")
+
+// Browser-style link blue, readable on both light and dark surfaces.
+private val LINK_COLOR = Color(0xFF1A73E8)
+
+private fun annotatedSmsBody(body: String): AnnotatedString = buildAnnotatedString {
+    val matches = URL_REGEX.findAll(body).toList()
+    if (matches.isEmpty()) {
+        append(body)
+        return@buildAnnotatedString
+    }
+    val linkStyle = TextLinkStyles(
+        style = SpanStyle(
+            color = LINK_COLOR,
+            textDecoration = TextDecoration.Underline
+        )
+    )
+    var cursor = 0
+    matches.forEach { match ->
+        if (match.range.first > cursor) {
+            append(body.substring(cursor, match.range.first))
+        }
+        // Strip trailing slashes from the displayed URL only — they're
+        // bidi-weak and Unicode pushes them to the visual start of the
+        // line when the surrounding text is RTL (Hebrew/Arabic), making
+        // the link read like "/https://example.com" instead of
+        // "https://example.com/". The click target keeps the full URL.
+        val display = match.value.trimEnd('/')
+        withLink(LinkAnnotation.Url(match.value, linkStyle)) {
+            append(display)
+        }
+        cursor = match.range.last + 1
+    }
+    if (cursor < body.length) {
+        append(body.substring(cursor))
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SmsCard(sms: TrackingSms, onCopied: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
+    val isRtl = remember(sms.body) { isRtlText(sms.body) }
+    val annotated = remember(sms.body) { annotatedSmsBody(sms.body) }
+
+    val cardContent = @Composable {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        clipboard.setText(AnnotatedString(sms.body))
+                        onCopied()
+                    }
+                ),
+            shape = RoundedCornerShape(14.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = sms.sender.ifBlank { "(unknown)" },
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = DateUtils.formatDateTime(sms.timestamp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = annotated,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        textDirection = TextDirection.Content
+                    )
+                )
+            }
+        }
+    }
+
+    if (isRtl) {
+        // Flip the whole card so the sender lands on the right and the
+        // timestamp on the left, matching what the user expects from a
+        // Hebrew-language SMS app.
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalLayoutDirection provides LayoutDirection.Rtl
+        ) {
+            cardContent()
+        }
+    } else {
+        cardContent()
     }
 }
 

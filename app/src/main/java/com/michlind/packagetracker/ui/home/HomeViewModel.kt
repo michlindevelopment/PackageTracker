@@ -9,6 +9,7 @@ import com.google.gson.Gson
 import com.michlind.packagetracker.data.preferences.AliImportPreferenceRepository
 import com.michlind.packagetracker.data.preferences.SortPreferenceRepository
 import com.michlind.packagetracker.data.preferences.SyncOnResumePreferenceRepository
+import com.michlind.packagetracker.data.repository.SmsRepository
 import com.michlind.packagetracker.di.CainiaoRateLimitException
 import com.michlind.packagetracker.domain.model.AliImportMode
 import com.michlind.packagetracker.domain.model.AliOrderImport
@@ -142,6 +143,7 @@ class HomeViewModel @Inject constructor(
     private val importPrefs: AliImportPreferenceRepository,
     private val syncOnResumePrefs: SyncOnResumePreferenceRepository,
     private val checkForUpdate: CheckForUpdateUseCase,
+    private val smsRepository: SmsRepository,
     private val gson: Gson
 ) : ViewModel() {
 
@@ -502,10 +504,17 @@ class HomeViewModel @Inject constructor(
                                 .map { it.trackingNumber }
                         }.getOrDefault(emptyList())
                     }
-                    refreshTnsRateLimited(
+                    val tnsForRefresh =
                         eligibleTns.filter { it.isNotBlank() }.distinct()
-                    )
+                    refreshTnsRateLimited(tnsForRefresh)
                     _refreshingTrackingNumber.value = null
+
+                    // Same eligible set, but for SMS scan: walk the inbox
+                    // for matches and cache them. No-ops silently if the
+                    // user hasn't granted READ_SMS yet.
+                    runCatching {
+                        smsRepository.scanForTrackingNumbers(tnsForRefresh)
+                    }
                 }
 
                 if (!runBgImport) return@withLock

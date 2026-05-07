@@ -21,8 +21,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.michlind.packagetracker.data.preferences.ThemePreferenceRepository
 import com.michlind.packagetracker.domain.model.ThemePreference
 import com.michlind.packagetracker.ui.navigation.AppNavigation
@@ -84,18 +83,23 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Android 13+ requires runtime permission for notifications.
-                // Prompt once at first launch — if the user denies, the system
-                // won't prompt again automatically (they'd have to toggle it
-                // in app info), but the app stays usable either way.
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    val notifPermission = rememberPermissionState(
-                        Manifest.permission.POST_NOTIFICATIONS
-                    )
-                    LaunchedEffect(Unit) {
-                        if (!notifPermission.status.isGranted) {
-                            notifPermission.launchPermissionRequest()
-                        }
+                // Ask for the runtime permissions the app needs at launch:
+                //   - POST_NOTIFICATIONS (API 33+): status-change pings.
+                //   - READ_SMS: scanning the inbox for tracking-number hits.
+                // Bundling them via rememberMultiplePermissionsState avoids
+                // the "second prompt is silently suppressed" race we'd hit
+                // if MainActivity and HomeScreen each fired their own
+                // single-permission requests in quick succession.
+                val permissions = buildList {
+                    add(Manifest.permission.READ_SMS)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        add(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+                val multiPermissions = rememberMultiplePermissionsState(permissions)
+                LaunchedEffect(Unit) {
+                    if (!multiPermissions.allPermissionsGranted) {
+                        multiPermissions.launchMultiplePermissionRequest()
                     }
                 }
 

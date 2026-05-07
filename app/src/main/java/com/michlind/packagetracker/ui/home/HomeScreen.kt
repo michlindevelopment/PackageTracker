@@ -185,11 +185,12 @@ fun HomeScreen(
         }
     }
 
+    val context = LocalContext.current
+
     // Keep the screen awake while the bg AliExpress import is running —
     // the WebView walks the order list and per-order iframe scrape, which
     // can take a minute or two, and the system will suspend the WebView's
     // JS timers if the screen turns off mid-import.
-    val context = LocalContext.current
     DisposableEffect(bgImportActive) {
         val window = (context as? Activity)?.window
         if (bgImportActive) {

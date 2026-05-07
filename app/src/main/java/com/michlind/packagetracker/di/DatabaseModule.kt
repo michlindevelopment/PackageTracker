@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.michlind.packagetracker.data.db.PackageDao
 import com.michlind.packagetracker.data.db.PackageDatabase
+import com.michlind.packagetracker.data.db.TrackingSmsDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -23,9 +24,15 @@ object DatabaseModule {
             PackageDatabase::class.java,
             "package_tracker.db"
         )
-            .addMigrations(PackageDatabase.MIGRATION_1_2)
+            .addMigrations(
+                PackageDatabase.MIGRATION_1_2,
+                PackageDatabase.MIGRATION_2_3
+            )
             .build()
 
     @Provides
     fun providePackageDao(db: PackageDatabase): PackageDao = db.packageDao()
+
+    @Provides
+    fun provideTrackingSmsDao(db: PackageDatabase): TrackingSmsDao = db.trackingSmsDao()
 }
