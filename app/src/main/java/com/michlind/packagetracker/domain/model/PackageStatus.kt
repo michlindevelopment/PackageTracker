@@ -23,7 +23,7 @@ enum class PackageStatus {
             CUSTOMS_EXPORT   -> "Export Customs"
             CUSTOMS_IMPORT   -> "Import Customs"
             CUSTOMS          -> "In Customs"
-            OUT_FOR_DELIVERY -> "Out for Delivery"
+            OUT_FOR_DELIVERY -> "With Local Courier"
             AWAITING_PICKUP  -> "Awaiting Pickup"
             DELIVERED        -> "Delivered"
             EXCEPTION        -> "Exception"

@@ -4,22 +4,31 @@ import com.michlind.packagetracker.domain.model.PackageStatus
 
 object StatusMapper {
 
+    // Cainiao's `progressRate` runs 0.0 → 1.0 across the four progress points
+    // (origin country → destination country → destination city → delivered).
+    // We only believe a top-level `"DELIVERING"` once the destination-city
+    // checkpoint is reached; below that the parcel is still in transit.
+    private const val LAST_MILE_PROGRESS_THRESHOLD = 0.75f
+
     /**
      * Maps Cainiao API response to a [PackageStatus].
      *
-     * The top-level `status` field is unreliable — packages with `status=DELIVERING`
-     * can actually be at the origin transport hub. So we prefer the latest action
-     * code first (authoritative), falling back to the top-level status only when
+     * The top-level `status` field is unreliable — Cainiao uses `"DELIVERING"`
+     * for the entire in-transit phase, not just last-mile. So we prefer the
+     * latest action code (authoritative), and only fall back to the top-level
+     * status — guarded by `progressRate` for the `"DELIVERING"` case — when
      * the action code is unknown.
      */
-    fun map(statusRaw: String?, latestActionCode: String?): PackageStatus {
+    fun map(statusRaw: String?, latestActionCode: String?, progressRate: Float? = null): PackageStatus {
         val byAction = mapActionCode(latestActionCode)
         if (byAction != PackageStatus.UNKNOWN) return byAction
 
         val status = statusRaw?.uppercase().orEmpty()
         return when {
             status.contains("SIGN") || status == "DELIVERED" -> PackageStatus.DELIVERED
-            status == "DELIVERING" -> PackageStatus.OUT_FOR_DELIVERY
+            status == "DELIVERING" ->
+                if ((progressRate ?: 0f) >= LAST_MILE_PROGRESS_THRESHOLD) PackageStatus.OUT_FOR_DELIVERY
+                else PackageStatus.IN_TRANSIT
             status.contains("CUSTOMS") -> PackageStatus.CUSTOMS
             status.contains("DEPARTURE") || status == "IN_TRANSIT" -> PackageStatus.IN_TRANSIT
             status.contains("ACCEPT") || status.contains("GTMS") -> PackageStatus.SHIPPED
@@ -39,6 +48,10 @@ object StatusMapper {
             // still before export customs.
             "PU_PICKUP_SUCCESS",
             "SC_INBOUND_SUCCESS", "SC_OUTBOUND_SUCCESS",
+            // SC_TRANS_* are intermediate transit sorting centers on the
+            // domestic origin leg — same kind of event as SC_INBOUND/OUTBOUND,
+            // just at a hub between the first and last sorting center.
+            "SC_TRANS_INBOUND_SUCCESS", "SC_TRANS_OUTBOUND_SUCCESS",
             "LH_HO_IN_SUCCESS",
             "CW_INBOUND", "CW_SIGN_IN_SUCCESS", "CW_OUTBOUND" -> PackageStatus.SHIPPED
 
