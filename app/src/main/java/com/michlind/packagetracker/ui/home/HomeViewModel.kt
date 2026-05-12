@@ -111,11 +111,13 @@ private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup
                     // Sort by carrier-reported journey progress (0..1). Falls
                     // back to a step-index-derived rate for packages without
                     // a fresh progressRate (e.g. old DB rows, non-Cainiao).
-                    // Tie-break by most recent activity so packages with the
-                    // same progress keep a sensible "fresh first" order.
+                    // Tie-break by orderDate (newest first) so packages with
+                    // the same progress stay put across refreshes — using
+                    // lastUpdated here would reshuffle ties after every sync
+                    // because each refresh stamps a fresh timestamp.
                     groups.sortedWith(
                         compareByDescending<PackageGroup> { it.progress }
-                            .thenByDescending { g -> g.packages.maxOf { it.lastUpdated } }
+                            .thenByDescending { g -> g.packages.maxOf { it.orderDate() } }
                     )
                 SortMode.LAST_SHIPPED ->
                     groups.sortedByDescending { it.packages.maxOf { p -> p.orderDate() } }
