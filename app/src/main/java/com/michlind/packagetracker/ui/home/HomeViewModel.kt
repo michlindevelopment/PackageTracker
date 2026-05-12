@@ -91,6 +91,12 @@ private fun TrackedPackage.orderDate(): Long =
     events.minOfOrNull { it.time }
         ?: if (isReceived) lastUpdated else createdAt
 
+// Cainiao reports days-in-transit as "26 day(s)" (post tab-cleanup) — strip
+// the digits and parse. Missing/unparseable → 0 so the package sorts last
+// among same-progress ties.
+private fun TrackedPackage.daysInTransitInt(): Int =
+    daysInTransit?.filter { it.isDigit() }?.toIntOrNull() ?: 0
+
 private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup> =
     groupBy { it.trackingNumber.ifBlank { it.id.toString() } }
         .entries
@@ -111,12 +117,13 @@ private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup
                     // Sort by carrier-reported journey progress (0..1). Falls
                     // back to a step-index-derived rate for packages without
                     // a fresh progressRate (e.g. old DB rows, non-Cainiao).
-                    // Tie-break by orderDate (newest first) so packages with
-                    // the same progress stay put across refreshes — using
-                    // lastUpdated here would reshuffle ties after every sync
-                    // because each refresh stamps a fresh timestamp.
+                    // Tie-breakers: days-in-transit (longer first — among
+                    // same-progress packages, the older shipment is closer to
+                    // arrival), then orderDate (newest first). Both are stable
+                    // across syncs unlike lastUpdated.
                     groups.sortedWith(
                         compareByDescending<PackageGroup> { it.progress }
+                            .thenByDescending { g -> g.packages.maxOf { it.daysInTransitInt() } }
                             .thenByDescending { g -> g.packages.maxOf { it.orderDate() } }
                     )
                 SortMode.LAST_SHIPPED ->
