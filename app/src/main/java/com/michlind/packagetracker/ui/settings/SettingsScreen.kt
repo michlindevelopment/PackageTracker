@@ -1,5 +1,6 @@
 package com.michlind.packagetracker.ui.settings
 
+import com.michlind.packagetracker.BuildConfig
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -80,6 +81,7 @@ fun SettingsScreen(
     val processedPages by viewModel.processedPages.collectAsStateWithLifecycle()
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsStateWithLifecycle()
     val syncOnResumeEnabled by viewModel.syncOnResumeEnabled.collectAsStateWithLifecycle()
+    val mockTrackingEnabled by viewModel.mockTrackingEnabled.collectAsStateWithLifecycle()
     var showBudgetSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     var showDisconnectDialog by remember { mutableStateOf(false) }
@@ -275,6 +277,33 @@ fun SettingsScreen(
                     checked = syncOnResumeEnabled,
                     onCheckedChange = { viewModel.setSyncOnResumeEnabled(it) }
                 )
+            }
+
+            if (BuildConfig.DEBUG) {
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Mock tracking responses",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Debug: synthesize random Cainiao responses " +
+                                "instead of hitting the real API. Use this to " +
+                                "exercise the UI without triggering the CAPTCHA.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                        )
+                    }
+                    Spacer(Modifier.size(16.dp))
+                    Switch(
+                        checked = mockTrackingEnabled,
+                        onCheckedChange = { viewModel.setMockTrackingEnabled(it) }
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))

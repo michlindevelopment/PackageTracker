@@ -3,6 +3,7 @@ package com.michlind.packagetracker.di
 import com.google.gson.Gson
 import com.michlind.packagetracker.data.api.CainiaoApiService
 import com.michlind.packagetracker.data.db.PackageDao
+import com.michlind.packagetracker.data.preferences.MockTrackingPreferenceRepository
 import com.michlind.packagetracker.data.repository.PackageRepositoryImpl
 import com.michlind.packagetracker.domain.repository.PackageRepository
 import dagger.Module
@@ -20,6 +21,7 @@ object AppModule {
     fun providePackageRepository(
         dao: PackageDao,
         api: CainiaoApiService,
-        gson: Gson
-    ): PackageRepository = PackageRepositoryImpl(dao, api, gson)
+        gson: Gson,
+        mockPrefs: MockTrackingPreferenceRepository
+    ): PackageRepository = PackageRepositoryImpl(dao, api, gson, mockPrefs)
 }

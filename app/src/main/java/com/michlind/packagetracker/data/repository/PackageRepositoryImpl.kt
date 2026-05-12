@@ -2,9 +2,12 @@ package com.michlind.packagetracker.data.repository
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.michlind.packagetracker.BuildConfig
 import com.michlind.packagetracker.data.api.CainiaoApiService
+import com.michlind.packagetracker.data.api.MockCainiaoResponseGenerator
 import com.michlind.packagetracker.data.db.PackageDao
 import com.michlind.packagetracker.data.db.PackageEntity
+import com.michlind.packagetracker.data.preferences.MockTrackingPreferenceRepository
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.domain.model.TrackingEvent
@@ -29,7 +32,8 @@ private val ADVISORY_ACTION_CODES = setOf(
 class PackageRepositoryImpl @Inject constructor(
     private val dao: PackageDao,
     private val api: CainiaoApiService,
-    private val gson: Gson
+    private val gson: Gson,
+    private val mockPrefs: MockTrackingPreferenceRepository
 ) : PackageRepository {
 
     override fun getActivePackages(): Flow<List<TrackedPackage>> =
@@ -69,7 +73,15 @@ class PackageRepositoryImpl @Inject constructor(
 
     override suspend fun trackPackage(trackingNumber: String): Result<TrackingResult> {
         return try {
-            val response = api.trackPackage(trackingNumber)
+            // Test mode (Settings → "Mock Cainiao responses"): skip the real
+            // network call and synthesize a randomized but plausible payload.
+            // Useful for exercising the UI without tripping Cainiao's
+            // anti-bot CAPTCHA from rapid back-to-back requests.
+            val response = if (BuildConfig.DEBUG && mockPrefs.enabled.value) {
+                MockCainiaoResponseGenerator.generate(trackingNumber)
+            } else {
+                api.trackPackage(trackingNumber)
+            }
             if (!response.success || response.module.isNullOrEmpty()) {
                 return Result.failure(Exception("Tracking number not found"))
             }

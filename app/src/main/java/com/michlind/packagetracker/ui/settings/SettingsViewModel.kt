@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.michlind.packagetracker.BuildConfig
 import com.michlind.packagetracker.data.preferences.AliImportPreferenceRepository
+import com.michlind.packagetracker.data.preferences.MockTrackingPreferenceRepository
 import com.michlind.packagetracker.data.preferences.NotificationPreferenceRepository
 import com.michlind.packagetracker.data.preferences.SyncOnResumePreferenceRepository
 import com.michlind.packagetracker.data.preferences.ThemePreferenceRepository
@@ -44,6 +45,7 @@ class SettingsViewModel @Inject constructor(
     private val importPrefs: AliImportPreferenceRepository,
     private val notificationPrefs: NotificationPreferenceRepository,
     private val syncOnResumePrefs: SyncOnResumePreferenceRepository,
+    private val mockTrackingPrefs: MockTrackingPreferenceRepository,
     private val packageRepository: PackageRepository,
     private val checkForUpdate: CheckForUpdateUseCase,
     private val appUpdater: AppUpdater,
@@ -64,6 +66,9 @@ class SettingsViewModel @Inject constructor(
 
     val syncOnResumeEnabled: StateFlow<Boolean> = syncOnResumePrefs.enabled
     fun setSyncOnResumeEnabled(value: Boolean) = syncOnResumePrefs.setEnabled(value)
+
+    val mockTrackingEnabled: StateFlow<Boolean> = mockTrackingPrefs.enabled
+    fun setMockTrackingEnabled(value: Boolean) = mockTrackingPrefs.setEnabled(value)
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
