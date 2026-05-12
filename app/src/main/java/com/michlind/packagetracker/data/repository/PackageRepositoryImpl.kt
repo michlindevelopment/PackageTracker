@@ -14,6 +14,7 @@ import com.michlind.packagetracker.domain.model.TrackingEvent
 import com.michlind.packagetracker.domain.model.TrackingResult
 import com.michlind.packagetracker.domain.repository.PackageRepository
 import com.michlind.packagetracker.util.StatusMapper
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -78,6 +79,10 @@ class PackageRepositoryImpl @Inject constructor(
             // Useful for exercising the UI without tripping Cainiao's
             // anti-bot CAPTCHA from rapid back-to-back requests.
             val response = if (BuildConfig.DEBUG && mockPrefs.enabled.value) {
+                // Simulate network latency so the per-card refresh animation
+                // is actually visible (the real API takes ~1s; mock gen is
+                // instant, which makes the badge animation flash by).
+                delay(1500)
                 MockCainiaoResponseGenerator.generate(trackingNumber)
             } else {
                 api.trackPackage(trackingNumber)

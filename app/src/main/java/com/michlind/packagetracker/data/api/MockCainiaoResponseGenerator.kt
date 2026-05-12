@@ -45,7 +45,10 @@ object MockCainiaoResponseGenerator {
         // refreshes of the same TN can return different states — handy for
         // watching the UI react to status changes.
         val rng = Random(trackingNumber.hashCode().toLong() xor System.nanoTime())
-        val targetIdx = rng.nextInt(stages.size)
+        // Stop short of the final "SIGN" stage — the mock should never auto-
+        // mark a package as delivered (which would also auto-flip it to
+        // received). Limit picks to 0..lastIndex-1.
+        val targetIdx = rng.nextInt(stages.size - 1)
 
         val now = System.currentTimeMillis()
         // Spread events backwards from "now" with a small jittered gap so the
@@ -72,7 +75,7 @@ object MockCainiaoResponseGenerator {
         }
 
         val (statusStr, statusDesc, progressRate) = when {
-            targetIdx == stages.lastIndex     -> Triple("DELIVERED",  "Delivered",  1.0f)
+            // SIGN stage is excluded above; we never produce DELIVERED.
             targetIdx >= 12                   -> Triple("DELIVERING", "Delivering", 0.85f) // out for delivery
             targetIdx >= 11                   -> Triple("DELIVERING", "Delivering", 0.7f)  // with local courier
             targetIdx >= 8                    -> Triple("DELIVERING", "Delivering", 0.5f)  // arrived destination country

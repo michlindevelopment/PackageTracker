@@ -1,5 +1,7 @@
 package com.michlind.packagetracker.ui.components
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -62,6 +64,14 @@ fun StatusBadge(
     isRefreshing: Boolean = false
 ) {
     val (color, icon) = status.colorAndIcon()
+    // Wrap so width/height changes — refresh toggling, or the status text
+    // changing (e.g. "Shipped" → "Local Courier") — animate smoothly instead
+    // of snapping.
+    Box(
+        modifier = modifier.animateContentSize(
+            animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing)
+        )
+    ) {
     if (isRefreshing) {
         // Replace the text with the same status icon animating left → right
         // (a "moving forward" hint) while THIS package is being refreshed.
@@ -69,7 +79,7 @@ fun StatusBadge(
         // reserves the badge's height so the surrounding row doesn't reflow
         // when refresh toggles.
         BoxWithConstraints(
-            modifier = modifier
+            modifier = Modifier
                 .background(color.copy(alpha = 0.22f), RoundedCornerShape(50))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
                 .width(64.dp)
@@ -111,7 +121,7 @@ fun StatusBadge(
         }
     } else {
         Row(
-            modifier = modifier
+            modifier = Modifier
                 .background(color.copy(alpha = 0.22f), RoundedCornerShape(50))
                 .padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -130,6 +140,7 @@ fun StatusBadge(
                 style = MaterialTheme.typography.labelMedium
             )
         }
+    }
     }
 }
 
