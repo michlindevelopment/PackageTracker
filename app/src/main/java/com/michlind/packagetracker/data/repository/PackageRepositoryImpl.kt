@@ -95,7 +95,14 @@ class PackageRepositoryImpl @Inject constructor(
             val latestActionCode = events.firstOrNull {
                 it.actionCode.isNotBlank() && it.actionCode !in ADVISORY_ACTION_CODES
             }?.actionCode
-            val status = StatusMapper.map(data.status, latestActionCode, data.processInfo?.progressRate)
+            val progressPoints = data.processInfo?.progressPointList.orEmpty()
+            val status = StatusMapper.map(
+                data.status,
+                latestActionCode,
+                data.processInfo?.progressRate,
+                progressPointsLit = progressPoints.count { it.light == true },
+                progressPointsTotal = progressPoints.size
+            )
 
             Result.success(
                 TrackingResult(

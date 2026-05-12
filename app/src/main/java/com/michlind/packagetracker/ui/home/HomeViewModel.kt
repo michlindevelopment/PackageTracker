@@ -515,14 +515,22 @@ class HomeViewModel @Inject constructor(
                     // fires, which would silently make syncStatus a no-op.
                     // getPackagesEligibleForRefresh covers both active and
                     // marked-received-but-not-yet-DELIVERED rows.
-                    val eligibleTns = withContext(Dispatchers.IO) {
+                    //
+                    // Refresh in the same order packages appear on screen:
+                    // group by tracking number and sort by the user's current
+                    // sortMode so the topmost card is refreshed first. Matters
+                    // if Cainiao rate-limits us mid-loop — we want the user's
+                    // most-visible packages to have fresh data first.
+                    val currentSort = sortMode.value
+                    val tnsForRefresh = withContext(Dispatchers.IO) {
                         runCatching {
                             repository.getPackagesEligibleForRefresh()
+                                .toGroups(currentSort)
                                 .map { it.trackingNumber }
+                                .filter { it.isNotBlank() }
+                                .distinct()
                         }.getOrDefault(emptyList())
                     }
-                    val tnsForRefresh =
-                        eligibleTns.filter { it.isNotBlank() }.distinct()
                     refreshTnsRateLimited(tnsForRefresh)
                     _refreshingTrackingNumber.value = null
 

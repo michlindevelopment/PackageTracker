@@ -4,10 +4,9 @@ import com.michlind.packagetracker.domain.model.PackageStatus
 
 object StatusMapper {
 
-    // Cainiao's `progressRate` runs 0.0 → 1.0 across the four progress points
-    // (origin country → destination country → destination city → delivered).
-    // We only believe a top-level `"DELIVERING"` once the destination-city
-    // checkpoint is reached; below that the parcel is still in transit.
+    // Fallback threshold for `progressRate` when `progressPointList` info isn't
+    // available. The 4-point list (origin → dest country → dest city → delivered)
+    // hits ~0.75 only once the destination-city checkpoint is lit.
     private const val LAST_MILE_PROGRESS_THRESHOLD = 0.75f
 
     /**
@@ -15,11 +14,21 @@ object StatusMapper {
      *
      * The top-level `status` field is unreliable — Cainiao uses `"DELIVERING"`
      * for the entire in-transit phase, not just last-mile. So we prefer the
-     * latest action code (authoritative), and only fall back to the top-level
-     * status — guarded by `progressRate` for the `"DELIVERING"` case — when
-     * the action code is unknown.
+     * latest action code (authoritative). When the action code is unknown,
+     * we fall back to the top-level status, guarded for the `"DELIVERING"`
+     * case by either:
+     *   - `progressPointList` lit-count (preferred — works for both 3- and
+     *     4-point variants: last-mile when ≥ total - 1 points are lit), or
+     *   - the legacy `progressRate >= 0.75` heuristic when point info is
+     *     missing.
      */
-    fun map(statusRaw: String?, latestActionCode: String?, progressRate: Float? = null): PackageStatus {
+    fun map(
+        statusRaw: String?,
+        latestActionCode: String?,
+        progressRate: Float? = null,
+        progressPointsLit: Int = 0,
+        progressPointsTotal: Int = 0
+    ): PackageStatus {
         val byAction = mapActionCode(latestActionCode)
         if (byAction != PackageStatus.UNKNOWN) return byAction
 
@@ -27,7 +36,7 @@ object StatusMapper {
         return when {
             status.contains("SIGN") || status == "DELIVERED" -> PackageStatus.DELIVERED
             status == "DELIVERING" ->
-                if ((progressRate ?: 0f) >= LAST_MILE_PROGRESS_THRESHOLD) PackageStatus.OUT_FOR_DELIVERY
+                if (isAtLastMile(progressRate, progressPointsLit, progressPointsTotal)) PackageStatus.OUT_FOR_DELIVERY
                 else PackageStatus.IN_TRANSIT
             status.contains("CUSTOMS") -> PackageStatus.CUSTOMS
             status.contains("DEPARTURE") || status == "IN_TRANSIT" -> PackageStatus.IN_TRANSIT
@@ -36,6 +45,22 @@ object StatusMapper {
             status.contains("FAILED") || status.contains("RETURN") || status.contains("LOST") || status.contains("EXCEPTION") -> PackageStatus.EXCEPTION
             else -> PackageStatus.UNKNOWN
         }
+    }
+
+    // "Last mile" = the destination-side hop. With Cainiao's point lists this
+    // is when all but one checkpoint are lit (the unlit one being "Delivered"):
+    //   - 4-point: ≥3 lit (origin + dest country + dest city)
+    //   - 3-point: ≥2 lit (origin + dest country)
+    // If point info isn't available we fall back to the progressRate heuristic
+    // — coarser, but better than nothing.
+    private fun isAtLastMile(
+        progressRate: Float?,
+        progressPointsLit: Int,
+        progressPointsTotal: Int
+    ): Boolean = when {
+        progressPointsTotal > 0 -> progressPointsLit >= progressPointsTotal - 1
+        progressRate != null -> progressRate >= LAST_MILE_PROGRESS_THRESHOLD
+        else -> false
     }
 
     fun mapActionCode(actionCode: String?): PackageStatus {
@@ -67,8 +92,10 @@ object StatusMapper {
             "CC_HO_IN_SUCCESS", "CC_HO_OUT_SUCCESS",
             "CC_IM_START", "CC_IM_SUCCESS" -> PackageStatus.CUSTOMS_IMPORT
 
-            // Local delivery handed off to last-mile carrier
-            "GTMS_ACCEPT" -> PackageStatus.OUT_FOR_DELIVERY
+            // Local delivery: handed off to last-mile carrier, then on the
+            // truck. GTMS_ACCEPT = parcel received by local delivery company;
+            // GTMS_DO_DEPART = driver departed depot with the parcel.
+            "GTMS_ACCEPT", "GTMS_DO_DEPART" -> PackageStatus.OUT_FOR_DELIVERY
 
             // Package available at a pickup point
             "GSTA_INFORM_BUYER", "GTMS_STA_SIGNED" -> PackageStatus.AWAITING_PICKUP
