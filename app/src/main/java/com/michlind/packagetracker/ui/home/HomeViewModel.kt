@@ -61,6 +61,21 @@ data class PackageGroup(
     val displayName: String
         get() = if (isMultiple) "Combined package - ${packages.size} items"
                 else packages.first().name.ifBlank { trackingNumber.ifBlank { "Package" } }
+
+    // Best-known journey progress within the group: real `progressRate` if
+    // any sub-package has one, otherwise derived from `status.stepIndex`
+    // (max stepIndex is 6 → DELIVERED). Used for the "Progress" sort.
+    val progress: Float
+        get() = packages.maxOf { it.effectiveProgress() }
+}
+
+// Cainiao's progressRate when available; otherwise a coarse rate derived
+// from the status step index so packages without a fresh rate still sort
+// in a sensible spot relative to packages that have one.
+fun TrackedPackage.effectiveProgress(): Float {
+    progressRate?.let { return it.coerceIn(0f, 1f) }
+    val step = status.stepIndex
+    return if (step <= 0) 0f else step / 6f
 }
 
 // "Order date" = earliest tracking event time for the package (when the order
@@ -93,11 +108,13 @@ private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup
         .let { groups ->
             when (sortMode) {
                 SortMode.CLOSEST_TO_DELIVERY ->
-                    // Higher stepIndex = further along the pipeline. Tie-break
-                    // by most recent activity so packages on the same step keep
-                    // a sensible "fresh first" order.
+                    // Sort by carrier-reported journey progress (0..1). Falls
+                    // back to a step-index-derived rate for packages without
+                    // a fresh progressRate (e.g. old DB rows, non-Cainiao).
+                    // Tie-break by most recent activity so packages with the
+                    // same progress keep a sensible "fresh first" order.
                     groups.sortedWith(
-                        compareByDescending<PackageGroup> { it.status.stepIndex }
+                        compareByDescending<PackageGroup> { it.progress }
                             .thenByDescending { g -> g.packages.maxOf { it.lastUpdated } }
                     )
                 SortMode.LAST_SHIPPED ->

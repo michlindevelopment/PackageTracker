@@ -483,7 +483,7 @@ fun HomeScreen(
                             expanded = sortMenuOpen,
                             onDismissRequest = { sortMenuOpen = false }
                         ) {
-                            SortMenuItem("Closest to delivery", SortMode.CLOSEST_TO_DELIVERY, sortMode) {
+                            SortMenuItem("Progress", SortMode.CLOSEST_TO_DELIVERY, sortMode) {
                                 viewModel.setSortMode(it); sortMenuOpen = false
                             }
                             SortMenuItem("Last shipped", SortMode.LAST_SHIPPED, sortMode) {

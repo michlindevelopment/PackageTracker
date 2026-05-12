@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [PackageEntity::class, TrackingSmsEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class PackageDatabase : RoomDatabase() {
@@ -19,6 +19,12 @@ abstract class PackageDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE packages ADD COLUMN externalOrderId TEXT")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_packages_externalOrderId ON packages(externalOrderId)")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE packages ADD COLUMN progressRate REAL")
             }
         }
 

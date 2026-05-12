@@ -100,7 +100,8 @@ class ImportAliOrderUseCase @Inject constructor(
                         daysInTransit = sibling?.daysInTransit,
                         originCountry = sibling?.originCountry,
                         destCountry = sibling?.destCountry,
-                        externalOrderId = externalId
+                        externalOrderId = externalId,
+                        progressRate = sibling?.progressRate
                     )
                     val newId = repository.addPackage(pkg)
                     // Carrier-status fetch is no longer triggered inline.

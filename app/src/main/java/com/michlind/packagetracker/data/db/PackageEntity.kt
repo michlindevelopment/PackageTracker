@@ -25,5 +25,8 @@ data class PackageEntity(
     val daysInTransit: String?,
     val originCountry: String?,
     val destCountry: String?,
-    val externalOrderId: String? = null
+    val externalOrderId: String? = null,
+    // Cainiao's `processInfo.progressRate` — 0.0..1.0 across the four
+    // origin → destination-country → destination-city → delivered checkpoints.
+    val progressRate: Float? = null
 )

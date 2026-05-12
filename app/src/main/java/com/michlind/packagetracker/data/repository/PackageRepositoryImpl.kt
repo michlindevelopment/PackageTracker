@@ -105,7 +105,8 @@ class PackageRepositoryImpl @Inject constructor(
                     estimatedDeliveryTime = data.estimatedDeliveryTime,
                     daysInTransit = data.daysNumber?.replace("\t", " "),
                     originCountry = data.originCountry,
-                    destCountry = data.destCountry
+                    destCountry = data.destCountry,
+                    progressRate = data.processInfo?.progressRate
                 )
             )
         } catch (e: Exception) {
@@ -163,6 +164,7 @@ class PackageRepositoryImpl @Inject constructor(
                     daysInTransit = tracking.daysInTransit,
                     originCountry = tracking.originCountry,
                     destCountry = tracking.destCountry,
+                    progressRate = tracking.progressRate,
                     isReceived = existing.isReceived || nowDelivered
                 )
                 dao.update(updated)
@@ -201,7 +203,8 @@ class PackageRepositoryImpl @Inject constructor(
             daysInTransit = daysInTransit,
             originCountry = originCountry,
             destCountry = destCountry,
-            externalOrderId = externalOrderId
+            externalOrderId = externalOrderId,
+            progressRate = progressRate
         )
     }
 
@@ -222,6 +225,7 @@ class PackageRepositoryImpl @Inject constructor(
         daysInTransit = daysInTransit,
         originCountry = originCountry,
         destCountry = destCountry,
-        externalOrderId = externalOrderId
+        externalOrderId = externalOrderId,
+        progressRate = progressRate
     )
 }

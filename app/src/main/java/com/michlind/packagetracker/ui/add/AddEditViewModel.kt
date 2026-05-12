@@ -120,7 +120,8 @@ class AddEditViewModel @Inject constructor(
                 estimatedDeliveryTime = result?.estimatedDeliveryTime ?: existing?.estimatedDeliveryTime,
                 daysInTransit = result?.daysInTransit ?: existing?.daysInTransit,
                 originCountry = result?.originCountry ?: existing?.originCountry,
-                destCountry = result?.destCountry ?: existing?.destCountry
+                destCountry = result?.destCountry ?: existing?.destCountry,
+                progressRate = result?.progressRate ?: existing?.progressRate
             )
 
             val savedId = if (editingPackageId != null) {
