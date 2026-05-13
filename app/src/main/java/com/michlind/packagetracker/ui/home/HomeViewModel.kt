@@ -543,11 +543,17 @@ class HomeViewModel @Inject constructor(
                     refreshTnsRateLimited(tnsForRefresh)
                     _refreshingTrackingNumber.value = null
 
-                    // Same eligible set, but for SMS scan: walk the inbox
-                    // for matches and cache them. No-ops silently if the
-                    // user hasn't granted READ_SMS yet.
+                    // SMS scan: walk the inbox for matches and cache them.
+                    // Includes the user-supplied local-courier TNs (typed in
+                    // the Courier tab) on top of the Cainiao TNs, so the
+                    // SMS tab catches handover-courier notifications too.
+                    // No-ops silently if the user hasn't granted READ_SMS.
                     runCatching {
-                        smsRepository.scanForTrackingNumbers(tnsForRefresh)
+                        val localTns = withContext(Dispatchers.IO) {
+                            runCatching { repository.getActiveLocalTrackingNumbers() }
+                                .getOrDefault(emptyList())
+                        }
+                        smsRepository.scanForTrackingNumbers(tnsForRefresh + localTns)
                     }
                 }
 

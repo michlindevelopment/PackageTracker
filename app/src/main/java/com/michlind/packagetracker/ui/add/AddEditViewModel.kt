@@ -121,7 +121,10 @@ class AddEditViewModel @Inject constructor(
                 daysInTransit = result?.daysInTransit ?: existing?.daysInTransit,
                 originCountry = result?.originCountry ?: existing?.originCountry,
                 destCountry = result?.destCountry ?: existing?.destCountry,
-                progressRate = result?.progressRate ?: existing?.progressRate
+                progressRate = result?.progressRate ?: existing?.progressRate,
+                // Preserve user-supplied local-courier TN across edits —
+                // rebuilding the model from scratch would otherwise null it.
+                localTrackingNumber = existing?.localTrackingNumber
             )
 
             val savedId = if (editingPackageId != null) {

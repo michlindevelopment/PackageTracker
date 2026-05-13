@@ -26,6 +26,18 @@ interface PackageRepository {
     suspend fun updatePackage(pkg: TrackedPackage)
     suspend fun deletePackage(id: Long)
     suspend fun markAsReceived(id: Long, isReceived: Boolean)
+
+    /**
+     * Set (or clear, with null/blank) the user-supplied local-courier
+     * tracking number. Used only as an extra needle for SMS scanning.
+     */
+    suspend fun setLocalTrackingNumber(id: Long, trackingNumber: String?)
+
+    /**
+     * Snapshot of non-blank local-courier TNs across non-received packages.
+     * Used by syncStatus to feed the SMS scanner alongside main TNs.
+     */
+    suspend fun getActiveLocalTrackingNumbers(): List<String>
     suspend fun trackPackage(trackingNumber: String): Result<TrackingResult>
     suspend fun refreshPackage(id: Long): Result<Boolean>
 

@@ -32,5 +32,10 @@ data class PackageEntity(
     val destCarrierName: String? = null,
     val destCarrierPhone: String? = null,
     val destCarrierUrl: String? = null,
-    val destCarrierEmail: String? = null
+    val destCarrierEmail: String? = null,
+    // User-supplied tracking number for the destination courier (e.g. the
+    // Israel Post / local-carrier handover number printed on a delivery SMS).
+    // Used only as an extra needle for the SMS inbox scan, alongside the
+    // Cainiao tracking number.
+    val localTrackingNumber: String? = null
 )

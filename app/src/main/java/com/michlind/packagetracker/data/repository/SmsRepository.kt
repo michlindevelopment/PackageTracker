@@ -50,6 +50,17 @@ class SmsRepository @Inject constructor(
         }
 
     /**
+     * Reactive list of cached SMS hits for any of [trackingNumbers], newest
+     * first; rows matching more than one TN appear once. Used for the
+     * package detail screen so the SMS tab shows Cainiao-TN hits plus
+     * local-courier-TN hits in one stream.
+     */
+    fun observeForTrackingNumbers(trackingNumbers: List<String>): Flow<List<TrackingSms>> =
+        dao.observeForTrackingNumbers(trackingNumbers).map { list ->
+            list.map { it.toDomain() }
+        }
+
+    /**
      * For each tracking number, query the SMS inbox for messages whose body
      * contains it as a substring, and upsert hits into the cache. No-op if
      * READ_SMS isn't granted (so this is safe to call from syncStatus()

@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [PackageEntity::class, TrackingSmsEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class PackageDatabase : RoomDatabase() {
@@ -34,6 +34,12 @@ abstract class PackageDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE packages ADD COLUMN destCarrierPhone TEXT")
                 db.execSQL("ALTER TABLE packages ADD COLUMN destCarrierUrl TEXT")
                 db.execSQL("ALTER TABLE packages ADD COLUMN destCarrierEmail TEXT")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE packages ADD COLUMN localTrackingNumber TEXT")
             }
         }
 

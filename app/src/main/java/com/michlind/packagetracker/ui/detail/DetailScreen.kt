@@ -54,6 +54,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Scaffold
@@ -297,6 +299,12 @@ fun DetailScreen(
                         snackbarScope.launch {
                             snackbarHostState.showSnackbar("Copied to clipboard")
                         }
+                    },
+                    onSaveLocalTrackingNumber = { tn ->
+                        viewModel.setLocalTrackingNumber(packageId, tn)
+                    },
+                    onClearLocalTrackingNumber = {
+                        viewModel.setLocalTrackingNumber(packageId, null)
                     }
                 )
             }
@@ -313,8 +321,23 @@ private fun DetailContent(
     smsMessages: List<TrackingSms>,
     hasSmsPermission: Boolean,
     onRequestSmsPermission: () -> Unit,
-    onCopyMessage: () -> Unit
+    onCopyMessage: () -> Unit,
+    onSaveLocalTrackingNumber: (String) -> Unit,
+    onClearLocalTrackingNumber: () -> Unit
 ) {
+    var showLocalTnDialog by remember { mutableStateOf(false) }
+
+    if (showLocalTnDialog) {
+        LocalTrackingNumberDialog(
+            initial = pkg.localTrackingNumber.orEmpty(),
+            onDismiss = { showLocalTnDialog = false },
+            onSave = { tn ->
+                showLocalTnDialog = false
+                onSaveLocalTrackingNumber(tn)
+            }
+        )
+    }
+
     val nameTooltipState = rememberTooltipState(isPersistent = true)
     val tooltipScope = rememberCoroutineScope()
     // Tracking and SMS are always present; Local courier only appears once
@@ -621,7 +644,14 @@ private fun DetailContent(
                         onRequestPermission = onRequestSmsPermission,
                         onCopyMessage = onCopyMessage
                     )
-                    courierIndex -> pkg.destCarrier?.let { courierTabItems(it) }
+                    courierIndex -> pkg.destCarrier?.let {
+                        courierTabItems(
+                            carrier = it,
+                            localTrackingNumber = pkg.localTrackingNumber,
+                            onAddLocal = { showLocalTnDialog = true },
+                            onRemoveLocal = onClearLocalTrackingNumber
+                        )
+                    }
                 }
             }
         }
@@ -746,10 +776,18 @@ private fun LazyListScope.trackingHistoryItems(
     }
 }
 
-private fun LazyListScope.courierTabItems(carrier: DestCarrierInfo) {
+private fun LazyListScope.courierTabItems(
+    carrier: DestCarrierInfo,
+    localTrackingNumber: String?,
+    onAddLocal: () -> Unit,
+    onRemoveLocal: () -> Unit
+) {
     item {
         CourierCard(
             carrier = carrier,
+            localTrackingNumber = localTrackingNumber,
+            onAddLocalTrackingNumber = onAddLocal,
+            onRemoveLocalTrackingNumber = onRemoveLocal,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
     }
@@ -988,7 +1026,13 @@ private fun annotatedCourierBlob(body: String): AnnotatedString = buildAnnotated
 }
 
 @Composable
-private fun CourierCard(carrier: DestCarrierInfo, modifier: Modifier = Modifier) {
+private fun CourierCard(
+    carrier: DestCarrierInfo,
+    localTrackingNumber: String?,
+    onAddLocalTrackingNumber: () -> Unit,
+    onRemoveLocalTrackingNumber: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val hasRtl = remember(carrier.phone) { carrier.phone?.let(::isRtlText) ?: false }
     val phoneAnnotated = remember(carrier.phone) {
         carrier.phone?.let { annotatedCourierBlob(it) }
@@ -1061,6 +1105,47 @@ private fun CourierCard(carrier: DestCarrierInfo, modifier: Modifier = Modifier)
                     )
                 }
             }
+
+            // User-supplied local-courier TN. Sits directly under the carrier
+            // emblem because that's the conceptual owner of this number, even
+            // though storage lives on TrackedPackage. The TN is only used as
+            // an extra needle for SMS scanning — nothing is queried from
+            // Cainiao or any other API with it.
+            Spacer(Modifier.height(10.dp))
+            if (localTrackingNumber.isNullOrBlank()) {
+                OutlinedButton(
+                    onClick = onAddLocalTrackingNumber,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.add_local_courier_tn))
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.local_courier_tn_label),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = localTrackingNumber,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                    }
+                    TextButton(onClick = onRemoveLocalTrackingNumber) {
+                        Text(
+                            stringResource(R.string.remove),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+
             phoneAnnotated?.let { phone ->
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -1096,3 +1181,43 @@ private fun CourierCard(carrier: DestCarrierInfo, modifier: Modifier = Modifier)
     }
 }
 
+@Composable
+private fun LocalTrackingNumberDialog(
+    initial: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.add_local_courier_tn_title)) },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.add_local_courier_tn_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text(stringResource(R.string.local_courier_tn_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(text) },
+                enabled = text.trim().isNotEmpty()
+            ) { Text(stringResource(R.string.save_button)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}

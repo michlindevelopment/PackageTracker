@@ -37,4 +37,9 @@
     <string name="choose_from_gallery">Choose from Gallery</string>
     <string name="camera_permission_rationale">Camera permission is needed to take product photos.</string>
     <string name="storage_permission_rationale">Storage permission is needed to pick photos from your gallery.</string>
+    <string name="add_local_courier_tn">Add local courier tracking number</string>
+    <string name="add_local_courier_tn_title">Local courier tracking number</string>
+    <string name="add_local_courier_tn_help">Used only as an extra needle when scanning your SMS inbox for delivery notifications from the local courier.</string>
+    <string name="local_courier_tn_label">Local tracking number</string>
+    <string name="remove">Remove</string>
 </resources>

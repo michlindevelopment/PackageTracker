@@ -74,4 +74,13 @@ interface PackageDao {
 
     @Query("UPDATE packages SET isReceived = :isReceived, lastUpdated = :now WHERE id = :id")
     suspend fun setReceived(id: Long, isReceived: Boolean, now: Long)
+
+    @Query("UPDATE packages SET localTrackingNumber = :tn WHERE id = :id")
+    suspend fun setLocalTrackingNumber(id: Long, tn: String?)
+
+    // Used by HomeViewModel.syncStatus to feed the SMS scanner. Returns the
+    // user-supplied local-courier TNs for non-received packages so they're
+    // picked up alongside the main Cainiao TNs.
+    @Query("SELECT localTrackingNumber FROM packages WHERE isReceived = 0 AND localTrackingNumber IS NOT NULL AND localTrackingNumber != ''")
+    suspend fun getActiveLocalTrackingNumbers(): List<String>
 }

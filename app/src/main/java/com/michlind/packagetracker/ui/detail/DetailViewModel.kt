@@ -59,9 +59,16 @@ class DetailViewModel @Inject constructor(
     private val _deleted = MutableStateFlow(false)
     val deleted: StateFlow<Boolean> = _deleted.asStateFlow()
 
-    // Re-emitted whenever the loaded tracking number changes; the SMS list
-    // below switches its underlying DAO query in lockstep.
-    private val _trackingNumber = MutableStateFlow<String?>(initialCached?.trackingNumber)
+    // Re-emitted whenever the loaded tracking number(s) change; the SMS list
+    // below switches its underlying DAO query in lockstep. Two slots: the
+    // Cainiao TN (always present) and the user-supplied local-courier TN
+    // (nullable, set via the Courier tab).
+    private val _trackingNumbers = MutableStateFlow(
+        listOfNotNull(
+            initialCached?.trackingNumber?.takeIf { it.isNotBlank() },
+            initialCached?.localTrackingNumber?.takeIf { it.isNotBlank() }
+        )
+    )
 
     // Lazily re-checked snapshot of READ_SMS state. The screen calls
     // refreshSmsPermission() after the runtime permission dialog closes so
@@ -69,10 +76,10 @@ class DetailViewModel @Inject constructor(
     private val _hasSmsPermission = MutableStateFlow(smsRepository.hasPermission())
     val hasSmsPermission: StateFlow<Boolean> = _hasSmsPermission.asStateFlow()
 
-    val smsList: StateFlow<List<TrackingSms>> = _trackingNumber
-        .flatMapLatest { tn ->
-            if (tn.isNullOrBlank()) flowOf(emptyList())
-            else smsRepository.observeForTrackingNumber(tn)
+    val smsList: StateFlow<List<TrackingSms>> = _trackingNumbers
+        .flatMapLatest { tns ->
+            if (tns.isEmpty()) flowOf(emptyList())
+            else smsRepository.observeForTrackingNumbers(tns)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -85,7 +92,10 @@ class DetailViewModel @Inject constructor(
             when {
                 pkg != null -> {
                     _uiState.value = DetailUiState.Success(pkg)
-                    _trackingNumber.value = pkg.trackingNumber
+                    _trackingNumbers.value = listOfNotNull(
+                        pkg.trackingNumber.takeIf { it.isNotBlank() },
+                        pkg.localTrackingNumber?.takeIf { it.isNotBlank() }
+                    )
                 }
                 _uiState.value !is DetailUiState.Success -> {
                     _uiState.value = DetailUiState.Error("Package not found")
@@ -96,17 +106,42 @@ class DetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Save (or clear, with null/blank) the user-supplied local-courier
+     * tracking number. Re-seeds the SMS observer with the updated set, then
+     * runs a one-shot scan so the SMS tab populates immediately for the new
+     * TN instead of waiting for the next syncStatus().
+     */
+    fun setLocalTrackingNumber(packageId: Long, trackingNumber: String?) {
+        val normalized = trackingNumber?.trim()?.takeIf { it.isNotEmpty() }
+        viewModelScope.launch {
+            repository.setLocalTrackingNumber(packageId, normalized)
+            val pkg = repository.getPackageById(packageId)
+            if (pkg != null) {
+                _uiState.value = DetailUiState.Success(pkg)
+                _trackingNumbers.value = listOfNotNull(
+                    pkg.trackingNumber.takeIf { it.isNotBlank() },
+                    pkg.localTrackingNumber?.takeIf { it.isNotBlank() }
+                )
+            }
+            if (normalized != null && _hasSmsPermission.value) {
+                smsRepository.scanForTrackingNumbers(listOf(normalized))
+            }
+        }
+    }
+
     fun refreshSmsPermission() {
         _hasSmsPermission.value = smsRepository.hasPermission()
     }
 
-    /** Targeted scan for the currently-loaded TN. Used after the user grants
-     *  READ_SMS so the SMS tab populates without waiting for the next sync. */
+    /** Targeted scan for the currently-loaded TN(s) — Cainiao TN plus the
+     *  local-courier TN if set. Used after the user grants READ_SMS so the
+     *  SMS tab populates without waiting for the next sync. */
     fun scanSmsForCurrent() {
-        val tn = _trackingNumber.value ?: return
-        if (tn.isBlank()) return
+        val tns = _trackingNumbers.value
+        if (tns.isEmpty()) return
         viewModelScope.launch {
-            smsRepository.scanForTrackingNumbers(listOf(tn))
+            smsRepository.scanForTrackingNumbers(tns)
         }
     }
 

@@ -94,6 +94,17 @@ class PackageRepositoryImpl @Inject constructor(
         dao.setReceived(id, isReceived, System.currentTimeMillis())
     }
 
+    override suspend fun setLocalTrackingNumber(id: Long, trackingNumber: String?) {
+        val normalized = trackingNumber?.trim()?.takeIf { it.isNotEmpty() }
+        dao.setLocalTrackingNumber(id, normalized)
+        // Keep the warm cache consistent — the Detail screen reads from
+        // peekById on entry and would otherwise show stale data after a set.
+        cache[id]?.let { cache[id] = it.copy(localTrackingNumber = normalized) }
+    }
+
+    override suspend fun getActiveLocalTrackingNumbers(): List<String> =
+        dao.getActiveLocalTrackingNumbers()
+
     override suspend fun trackPackage(trackingNumber: String): Result<TrackingResult> {
         return try {
             // Test mode (Settings → "Mock Cainiao responses"): skip the real
@@ -275,7 +286,8 @@ class PackageRepositoryImpl @Inject constructor(
             destCountry = destCountry,
             externalOrderId = externalOrderId,
             progressRate = progressRate,
-            destCarrier = destCarrier
+            destCarrier = destCarrier,
+            localTrackingNumber = localTrackingNumber
         )
     }
 
@@ -301,6 +313,7 @@ class PackageRepositoryImpl @Inject constructor(
         destCarrierName = destCarrier?.name,
         destCarrierPhone = destCarrier?.phone,
         destCarrierUrl = destCarrier?.url,
-        destCarrierEmail = destCarrier?.email
+        destCarrierEmail = destCarrier?.email,
+        localTrackingNumber = localTrackingNumber
     )
 }
