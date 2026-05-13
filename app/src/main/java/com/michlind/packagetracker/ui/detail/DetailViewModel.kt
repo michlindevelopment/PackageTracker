@@ -1,5 +1,6 @@
 package com.michlind.packagetracker.ui.detail
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.michlind.packagetracker.data.repository.SmsRepository
@@ -30,6 +31,7 @@ sealed interface DetailUiState {
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class DetailViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val repository: PackageRepository,
     private val deletePackage: DeletePackageUseCase,
     private val markAsReceived: MarkAsReceivedUseCase,
@@ -38,7 +40,17 @@ class DetailViewModel @Inject constructor(
     private val smsRepository: SmsRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
+    // The home list keeps the repository's in-memory cache warm — when the
+    // user taps a card we hydrate Detail synchronously from there so the
+    // first frame already has real content during the slide. Falls back to
+    // Loading only if the cache miss is real (e.g. deep link from a
+    // notification before the home list ever loaded).
+    private val initialCached: TrackedPackage? =
+        savedStateHandle.get<Long>("packageId")?.let { repository.peekById(it) }
+
+    private val _uiState = MutableStateFlow<DetailUiState>(
+        initialCached?.let { DetailUiState.Success(it) } ?: DetailUiState.Loading
+    )
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)
@@ -49,7 +61,7 @@ class DetailViewModel @Inject constructor(
 
     // Re-emitted whenever the loaded tracking number changes; the SMS list
     // below switches its underlying DAO query in lockstep.
-    private val _trackingNumber = MutableStateFlow<String?>(null)
+    private val _trackingNumber = MutableStateFlow<String?>(initialCached?.trackingNumber)
 
     // Lazily re-checked snapshot of READ_SMS state. The screen calls
     // refreshSmsPermission() after the runtime permission dialog closes so
@@ -66,14 +78,21 @@ class DetailViewModel @Inject constructor(
 
     fun load(packageId: Long) {
         viewModelScope.launch {
-            _uiState.value = DetailUiState.Loading
+            // Don't force back to Loading — if we already rendered a cached
+            // Success on the first frame, keep showing it while the Room
+            // read confirms (avoids a Success → Loading → Success churn).
             val pkg = repository.getPackageById(packageId)
-            _uiState.value = if (pkg != null) {
-                DetailUiState.Success(pkg)
-            } else {
-                DetailUiState.Error("Package not found")
+            when {
+                pkg != null -> {
+                    _uiState.value = DetailUiState.Success(pkg)
+                    _trackingNumber.value = pkg.trackingNumber
+                }
+                _uiState.value !is DetailUiState.Success -> {
+                    _uiState.value = DetailUiState.Error("Package not found")
+                }
+                // else: cached Success stays — Room returned null but we have
+                // a memory copy. Don't downgrade on a delete-in-flight race.
             }
-            _trackingNumber.value = pkg?.trackingNumber
         }
     }
 

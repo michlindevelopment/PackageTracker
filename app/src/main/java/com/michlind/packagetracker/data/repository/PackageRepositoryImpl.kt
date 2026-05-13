@@ -18,6 +18,8 @@ import com.michlind.packagetracker.util.StatusMapper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,17 +40,35 @@ class PackageRepositoryImpl @Inject constructor(
     private val mockPrefs: MockTrackingPreferenceRepository
 ) : PackageRepository {
 
+    // Warm snapshot of TrackedPackage by id, populated as a side effect of
+    // every flow emission and every getPackageById call. Lets the detail
+    // screen render the first frame from memory while the slide animation
+    // is still running, instead of waiting on a Room round-trip.
+    private val cache = ConcurrentHashMap<Long, TrackedPackage>()
+
     override fun getActivePackages(): Flow<List<TrackedPackage>> =
-        dao.getActivePackages().map { list -> list.map { it.toDomain() } }
+        dao.getActivePackages()
+            .map { list -> list.map { it.toDomain() } }
+            .onEach { warmCache(it) }
 
     override fun getReceivedPackages(): Flow<List<TrackedPackage>> =
-        dao.getReceivedPackages().map { list -> list.map { it.toDomain() } }
+        dao.getReceivedPackages()
+            .map { list -> list.map { it.toDomain() } }
+            .onEach { warmCache(it) }
 
     override fun getNotYetSentPackages(): Flow<List<TrackedPackage>> =
-        dao.getNotYetSentPackages().map { list -> list.map { it.toDomain() } }
+        dao.getNotYetSentPackages()
+            .map { list -> list.map { it.toDomain() } }
+            .onEach { warmCache(it) }
 
     override suspend fun getPackageById(id: Long): TrackedPackage? =
-        dao.getById(id)?.toDomain()
+        dao.getById(id)?.toDomain()?.also { cache[it.id] = it }
+
+    override fun peekById(id: Long): TrackedPackage? = cache[id]
+
+    private fun warmCache(list: List<TrackedPackage>) {
+        list.forEach { cache[it.id] = it }
+    }
 
     override suspend fun getNonReceivedPackages(): List<TrackedPackage> =
         dao.getNonReceivedPackages().map { it.toDomain() }
@@ -67,6 +87,7 @@ class PackageRepositoryImpl @Inject constructor(
 
     override suspend fun deletePackage(id: Long) {
         dao.deleteById(id)
+        cache.remove(id)
     }
 
     override suspend fun markAsReceived(id: Long, isReceived: Boolean) {

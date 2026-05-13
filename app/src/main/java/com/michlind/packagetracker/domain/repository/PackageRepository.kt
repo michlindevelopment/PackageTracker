@@ -9,6 +9,17 @@ interface PackageRepository {
     fun getReceivedPackages(): Flow<List<TrackedPackage>>
     fun getNotYetSentPackages(): Flow<List<TrackedPackage>>
     suspend fun getPackageById(id: Long): TrackedPackage?
+
+    /**
+     * Synchronous, non-blocking lookup from the in-memory snapshot that is
+     * kept warm by the active/received/not-yet-sent flow collectors. Returns
+     * null if we haven't seen this id yet in any list emission (e.g.
+     * deep-linked from a notification before the home list ever loaded).
+     *
+     * Used to render Detail immediately when the user taps a card —
+     * sidesteps the Room round-trip during the slide animation.
+     */
+    fun peekById(id: Long): TrackedPackage?
     suspend fun getNonReceivedPackages(): List<TrackedPackage>
     suspend fun getPackagesEligibleForRefresh(): List<TrackedPackage>
     suspend fun addPackage(pkg: TrackedPackage): Long

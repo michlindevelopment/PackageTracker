@@ -106,6 +106,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.michlind.packagetracker.R
 import com.michlind.packagetracker.domain.model.DestCarrierInfo
@@ -254,8 +255,20 @@ fun DetailScreen(
     ) { paddingValues ->
         when (val state = uiState) {
             is DetailUiState.Loading -> {
-                Column(modifier = Modifier.padding(paddingValues)) {
-                    repeat(3) { SkeletonDetailHeader() }
+                // Defer the skeleton by 80ms so the warm path (tap from
+                // home — repository cache is hot — Success arrives in
+                // ~1-5ms) doesn't flash a shimmer mid-slide. If Success
+                // hasn't arrived by 80ms (cold path: deep link, freshly
+                // opened) the skeleton fades in normally.
+                var showSkeleton by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    delay(80)
+                    showSkeleton = true
+                }
+                if (showSkeleton) {
+                    Column(modifier = Modifier.padding(paddingValues)) {
+                        repeat(3) { SkeletonDetailHeader() }
+                    }
                 }
             }
 
