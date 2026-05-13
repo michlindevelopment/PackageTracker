@@ -18,7 +18,18 @@ data class CainiaoPackageData(
     @SerializedName("destCountry") val destCountry: String?,
     @SerializedName("estimatedDeliveryTime") val estimatedDeliveryTime: Long?,
     @SerializedName("processInfo") val processInfo: ProcessInfo?,
-    @SerializedName("logisticsAlert") val logisticsAlert: LogisticsAlert?
+    @SerializedName("logisticsAlert") val logisticsAlert: LogisticsAlert?,
+    @SerializedName("destCpInfo") val destCpInfo: DestCpInfo?
+)
+
+// Destination carrier (the last-mile courier in the recipient's country).
+// `phone` is a free-text blob — couriers cram WhatsApp/email/hours into it,
+// so the UI renders it raw and auto-links any phone/email/URL it can detect.
+data class DestCpInfo(
+    @SerializedName("cpName") val cpName: String?,
+    @SerializedName("phone") val phone: String?,
+    @SerializedName("url") val url: String?,
+    @SerializedName("email") val email: String?
 )
 
 data class CainiaoTraceEvent(

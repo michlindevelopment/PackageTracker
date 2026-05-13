@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
@@ -107,6 +108,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import com.michlind.packagetracker.R
+import com.michlind.packagetracker.domain.model.DestCarrierInfo
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.domain.model.TrackingSms
@@ -302,9 +304,14 @@ private fun DetailContent(
 ) {
     val nameTooltipState = rememberTooltipState(isPersistent = true)
     val tooltipScope = rememberCoroutineScope()
-    // Pager owns the selected tab — clicking a tab animates the pager,
-    // and a horizontal swipe slides between Tracking and SMS pages.
-    val pagerState = rememberPagerState(pageCount = { 2 })
+    // Tracking and SMS are always present; Local courier only appears once
+    // Cainiao reports a destination carrier (typically post-customs).
+    val showCourierTab = pkg.destCarrier != null
+    val trackingIndex = 0
+    val smsIndex = 1
+    val courierIndex = if (showCourierTab) 2 else -1
+    val tabCount = 2 + (if (showCourierTab) 1 else 0)
+    val pagerState = rememberPagerState(pageCount = { tabCount })
     val tabScope = rememberCoroutineScope()
 
     // Collapse the bulky ETA card + Shipping Progress stepper when the
@@ -429,13 +436,26 @@ private fun DetailContent(
                         modifier = Modifier.padding(top = 6.dp)
                     )
                 }
-                Row(
-                    modifier = Modifier.padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    pkg.originCountry?.let { InfoChip(label = "From", value = it) }
-                    pkg.destCountry?.let { InfoChip(label = "To", value = it) }
-                    pkg.daysInTransit?.let { InfoChip(label = "Transit", value = it) }
+                val route = listOfNotNull(pkg.originCountry, pkg.destCountry)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" → ")
+                val transitDigits = pkg.daysInTransit?.filter { it.isDigit() }
+                val transit = when {
+                    !transitDigits.isNullOrEmpty() -> "${transitDigits}d in transit"
+                    !pkg.daysInTransit.isNullOrBlank() -> pkg.daysInTransit
+                    else -> null
+                }
+                val summary = listOfNotNull(
+                    route.ifBlank { null },
+                    transit
+                ).joinToString("  ·  ")
+                if (summary.isNotBlank()) {
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
             }
         }
@@ -503,15 +523,16 @@ private fun DetailContent(
             }
         }
 
-        // Tabs — pinned right under Shipping Progress. Tap or swipe to
-        // switch between Tracking history and SMS.
+        // Tabs — pinned right under Shipping Progress. Tracking and SMS
+        // are always shown; Local courier hides itself until Cainiao
+        // reports a destination carrier.
         PrimaryTabRow(
-            selectedTabIndex = pagerState.currentPage,
+            selectedTabIndex = pagerState.currentPage.coerceAtMost(tabCount - 1),
             modifier = Modifier.padding(top = 8.dp)
         ) {
             Tab(
-                selected = pagerState.currentPage == 0,
-                onClick = { tabScope.launch { pagerState.animateScrollToPage(0) } },
+                selected = pagerState.currentPage == trackingIndex,
+                onClick = { tabScope.launch { pagerState.animateScrollToPage(trackingIndex) } },
                 text = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -527,8 +548,8 @@ private fun DetailContent(
                 }
             )
             Tab(
-                selected = pagerState.currentPage == 1,
-                onClick = { tabScope.launch { pagerState.animateScrollToPage(1) } },
+                selected = pagerState.currentPage == smsIndex,
+                onClick = { tabScope.launch { pagerState.animateScrollToPage(smsIndex) } },
                 text = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -545,11 +566,29 @@ private fun DetailContent(
                     }
                 }
             )
+            if (showCourierTab) {
+                Tab(
+                    selected = pagerState.currentPage == courierIndex,
+                    onClick = { tabScope.launch { pagerState.animateScrollToPage(courierIndex) } },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.LocalShipping,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text("Courier")
+                        }
+                    }
+                )
+            }
         }
 
         // Swipeable pages — each owns its own LazyColumn so vertical
-        // scroll inside Tracking doesn't affect SMS scroll position and
-        // vice versa.
+        // scroll inside one page doesn't affect another's scroll position.
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
@@ -560,16 +599,16 @@ private fun DetailContent(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)
             ) {
-                if (page == 0) {
-                    trackingHistoryItems(events = pkg.events)
-                } else {
-                    smsItems(
+                when (page) {
+                    trackingIndex -> trackingHistoryItems(events = pkg.events)
+                    smsIndex -> smsItems(
                         trackingNumber = pkg.trackingNumber,
                         messages = smsMessages,
                         hasPermission = hasSmsPermission,
                         onRequestPermission = onRequestSmsPermission,
                         onCopyMessage = onCopyMessage
                     )
+                    courierIndex -> pkg.destCarrier?.let { courierTabItems(it) }
                 }
             }
         }
@@ -694,6 +733,15 @@ private fun LazyListScope.trackingHistoryItems(
     }
 }
 
+private fun LazyListScope.courierTabItems(carrier: DestCarrierInfo) {
+    item {
+        CourierCard(
+            carrier = carrier,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+    }
+}
+
 private fun LazyListScope.smsItems(
     trackingNumber: String,
     messages: List<TrackingSms>,
@@ -773,6 +821,14 @@ private fun isRtlText(text: String): Boolean =
     text.any { it.code in 0x0590..0x05FF || it.code in 0x0600..0x06FF }
 
 private val URL_REGEX = Regex("""https?://\S+""")
+
+// Matches the three link-like fragments couriers cram into the free-text
+// `destCpInfo.phone` field: URLs, intl phone numbers, and emails. Order
+// matters in the alternation so URLs (which can also contain `+`) win over
+// raw phone numbers, and emails win before a stray `@user` look-alike.
+private val COURIER_LINK_REGEX = Regex(
+    """(https?://\S+)|([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})|(\+\d[\d\s\-]{6,}\d)"""
+)
 
 // Browser-style link blue, readable on both light and dark surfaces.
 private val LINK_COLOR = Color(0xFF1A73E8)
@@ -881,19 +937,149 @@ private fun SmsCard(sms: TrackingSms, onCopied: () -> Unit) {
     }
 }
 
-@Composable
-private fun InfoChip(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-            fontSize = 10.sp
+// Builds an AnnotatedString from a free-text blob with phone numbers,
+// emails, and URLs auto-detected and wired to the appropriate `tel:` /
+// `mailto:` / `https://` link annotations. Used by the destination
+// courier card where Cainiao crams everything into a single text field.
+private fun annotatedCourierBlob(body: String): AnnotatedString = buildAnnotatedString {
+    val matches = COURIER_LINK_REGEX.findAll(body).toList()
+    if (matches.isEmpty()) {
+        append(body)
+        return@buildAnnotatedString
+    }
+    val linkStyle = TextLinkStyles(
+        style = SpanStyle(
+            color = LINK_COLOR,
+            textDecoration = TextDecoration.Underline
         )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-            fontSize = 12.sp
-        )
+    )
+    var cursor = 0
+    matches.forEach { match ->
+        if (match.range.first > cursor) {
+            append(body.substring(cursor, match.range.first))
+        }
+        val raw = match.value
+        val href = when {
+            raw.startsWith("http", ignoreCase = true) -> raw
+            raw.contains('@') -> "mailto:$raw"
+            else -> "tel:" + raw.filter { it == '+' || it.isDigit() }
+        }
+        withLink(LinkAnnotation.Url(href, linkStyle)) {
+            append(raw)
+        }
+        cursor = match.range.last + 1
+    }
+    if (cursor < body.length) {
+        append(body.substring(cursor))
     }
 }
+
+@Composable
+private fun CourierCard(carrier: DestCarrierInfo, modifier: Modifier = Modifier) {
+    val hasRtl = remember(carrier.phone) { carrier.phone?.let(::isRtlText) ?: false }
+    val phoneAnnotated = remember(carrier.phone) {
+        carrier.phone?.let { annotatedCourierBlob(it) }
+    }
+    val urlAnnotated = remember(carrier.url) {
+        carrier.url?.let { url ->
+            val href = if (url.startsWith("http", ignoreCase = true)) url else "https://$url"
+            val display = url.removePrefix("https://").removePrefix("http://").trimEnd('/')
+            buildAnnotatedString {
+                withLink(
+                    LinkAnnotation.Url(
+                        href,
+                        TextLinkStyles(
+                            style = SpanStyle(
+                                color = LINK_COLOR,
+                                textDecoration = TextDecoration.Underline
+                            )
+                        )
+                    )
+                ) { append(display) }
+            }
+        }
+    }
+    val emailAnnotated = remember(carrier.email) {
+        carrier.email?.takeIf { it.isNotBlank() }?.let { email ->
+            buildAnnotatedString {
+                withLink(
+                    LinkAnnotation.Url(
+                        "mailto:$email",
+                        TextLinkStyles(
+                            style = SpanStyle(
+                                color = LINK_COLOR,
+                                textDecoration = TextDecoration.Underline
+                            )
+                        )
+                    )
+                ) { append(email) }
+            }
+        }
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.LocalShipping,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Local courier",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        text = carrier.name,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    )
+                }
+            }
+            phoneAnnotated?.let { phone ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = phone,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        textDirection = if (hasRtl) TextDirection.Content
+                            else TextDirection.Ltr
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                )
+            }
+            // Email isn't repeated if it already appears in the phone blob —
+            // many couriers mash both into one field and surfacing it twice
+            // is just noise.
+            emailAnnotated?.let { email ->
+                val phoneText = carrier.phone.orEmpty()
+                if (!phoneText.contains(carrier.email!!, ignoreCase = true)) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = email,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+            urlAnnotated?.let { url ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = url,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+

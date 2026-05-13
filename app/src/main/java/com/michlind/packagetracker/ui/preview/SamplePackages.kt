@@ -1,5 +1,6 @@
 package com.michlind.packagetracker.ui.preview
 
+import com.michlind.packagetracker.domain.model.DestCarrierInfo
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.domain.model.TrackingEvent
@@ -27,7 +28,8 @@ fun samplePackage(
     status: PackageStatus = PackageStatus.IN_TRANSIT,
     daysInTransit: String? = "12 days",
     photoUri: String? = null,
-    lastEvent: TrackingEvent? = sampleEvent()
+    lastEvent: TrackingEvent? = sampleEvent(),
+    destCarrier: DestCarrierInfo? = null
 ): TrackedPackage = TrackedPackage(
     id = id,
     trackingNumber = trackingNumber,
@@ -43,5 +45,6 @@ fun samplePackage(
     estimatedDeliveryTime = now + 5_000_000_000L,
     daysInTransit = daysInTransit,
     originCountry = "Mainland China",
-    destCountry = "Israel"
+    destCountry = "Israel",
+    destCarrier = destCarrier
 )

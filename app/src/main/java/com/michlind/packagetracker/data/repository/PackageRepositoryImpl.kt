@@ -8,6 +8,7 @@ import com.michlind.packagetracker.data.api.MockCainiaoResponseGenerator
 import com.michlind.packagetracker.data.db.PackageDao
 import com.michlind.packagetracker.data.db.PackageEntity
 import com.michlind.packagetracker.data.preferences.MockTrackingPreferenceRepository
+import com.michlind.packagetracker.domain.model.DestCarrierInfo
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.domain.model.TrackingEvent
@@ -121,6 +122,17 @@ class PackageRepositoryImpl @Inject constructor(
                 progressPointsTotal = progressPoints.size
             )
 
+            val destCarrier = data.destCpInfo?.let { cp ->
+                val name = cp.cpName?.trim().orEmpty()
+                if (name.isBlank()) null
+                else DestCarrierInfo(
+                    name = name,
+                    phone = cp.phone?.trim()?.ifBlank { null },
+                    url = cp.url?.trim()?.ifBlank { null },
+                    email = cp.email?.trim()?.ifBlank { null }
+                )
+            }
+
             Result.success(
                 TrackingResult(
                     status = status,
@@ -130,7 +142,8 @@ class PackageRepositoryImpl @Inject constructor(
                     daysInTransit = data.daysNumber?.replace("\t", " "),
                     originCountry = data.originCountry,
                     destCountry = data.destCountry,
-                    progressRate = data.processInfo?.progressRate
+                    progressRate = data.processInfo?.progressRate,
+                    destCarrier = destCarrier
                 )
             )
         } catch (e: Exception) {
@@ -189,6 +202,10 @@ class PackageRepositoryImpl @Inject constructor(
                     originCountry = tracking.originCountry,
                     destCountry = tracking.destCountry,
                     progressRate = tracking.progressRate,
+                    destCarrierName = tracking.destCarrier?.name ?: existing.destCarrierName,
+                    destCarrierPhone = tracking.destCarrier?.phone ?: existing.destCarrierPhone,
+                    destCarrierUrl = tracking.destCarrier?.url ?: existing.destCarrierUrl,
+                    destCarrierEmail = tracking.destCarrier?.email ?: existing.destCarrierEmail,
                     isReceived = existing.isReceived || nowDelivered
                 )
                 dao.update(updated)
@@ -211,6 +228,14 @@ class PackageRepositoryImpl @Inject constructor(
         } catch (_: Exception) {
             PackageStatus.UNKNOWN
         }
+        val destCarrier = destCarrierName?.takeIf { it.isNotBlank() }?.let { name ->
+            DestCarrierInfo(
+                name = name,
+                phone = destCarrierPhone,
+                url = destCarrierUrl,
+                email = destCarrierEmail
+            )
+        }
         return TrackedPackage(
             id = id,
             trackingNumber = trackingNumber,
@@ -228,7 +253,8 @@ class PackageRepositoryImpl @Inject constructor(
             originCountry = originCountry,
             destCountry = destCountry,
             externalOrderId = externalOrderId,
-            progressRate = progressRate
+            progressRate = progressRate,
+            destCarrier = destCarrier
         )
     }
 
@@ -250,6 +276,10 @@ class PackageRepositoryImpl @Inject constructor(
         originCountry = originCountry,
         destCountry = destCountry,
         externalOrderId = externalOrderId,
-        progressRate = progressRate
+        progressRate = progressRate,
+        destCarrierName = destCarrier?.name,
+        destCarrierPhone = destCarrier?.phone,
+        destCarrierUrl = destCarrier?.url,
+        destCarrierEmail = destCarrier?.email
     )
 }

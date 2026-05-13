@@ -117,7 +117,17 @@ object MockCainiaoResponseGenerator {
                         progressRate = progressRate,
                         progressPointList = pointList
                     ),
-                    logisticsAlert = null
+                    logisticsAlert = null,
+                    // Local courier only gets assigned once the package
+                    // reaches the destination country — mirror that so the
+                    // CourierCard only appears at the right point in the
+                    // mock journey.
+                    destCpInfo = if (targetIdx >= 10) DestCpInfo(
+                        cpName = "Hameritz & Flash Ltd",
+                        phone = "WhatsApp contact : +972549397673  יום ראשון - יום חמישי 8:00-16:00  h.status@hfd.co.il",
+                        url = "https://www.hfd.co.il/",
+                        email = "h.status@hfd.co.il"
+                    ) else null
                 )
             ),
             success = true
