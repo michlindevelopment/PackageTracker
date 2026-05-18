@@ -25,11 +25,18 @@ import javax.inject.Singleton
 
 // Cainiao action codes that are forecasts/advisory notifications rather than
 // real package progress — they show up at the top of the trace list but the
-// package may be far earlier in its journey. Skip these when deriving status.
+// package may be far earlier in its journey. Skip these when deriving status
+// so a single advisory event doesn't outrank actual movement further down
+// the trace (and so an advisory-only trace falls through to the
+// progressRate-based status bucket).
 private val ADVISORY_ACTION_CODES = setOf(
     // Destination carrier was notified the package will eventually arrive,
     // but the package itself is typically still at origin.
-    "LAST_MILE_ASN_NOTIFY"
+    "LAST_MILE_ASN_NOTIFY",
+    // Not in the official Alibaba TOP enum — Cainiao slaps this on
+    // pre-shipment ASNs ("Pre-Shipment Info Sent To …") which would
+    // otherwise read as real movement.
+    "COMMON_INTRANSIT"
 )
 
 @Singleton
@@ -145,13 +152,9 @@ class PackageRepositoryImpl @Inject constructor(
             val latestActionCode = events.firstOrNull {
                 it.actionCode.isNotBlank() && it.actionCode !in ADVISORY_ACTION_CODES
             }?.actionCode
-            val progressPoints = data.processInfo?.progressPointList.orEmpty()
             val status = StatusMapper.map(
-                data.status,
-                latestActionCode,
-                data.processInfo?.progressRate,
-                progressPointsLit = progressPoints.count { it.light == true },
-                progressPointsTotal = progressPoints.size
+                actionCode = latestActionCode,
+                progressRate = data.processInfo?.progressRate
             )
 
             val destCarrier = data.destCpInfo?.let { cp ->

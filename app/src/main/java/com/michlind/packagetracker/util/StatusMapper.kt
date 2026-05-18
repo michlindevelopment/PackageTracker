@@ -4,105 +4,131 @@ import com.michlind.packagetracker.domain.model.PackageStatus
 
 object StatusMapper {
 
-    // Fallback threshold for `progressRate` when `progressPointList` info isn't
-    // available. The 4-point list (origin → dest country → dest city → delivered)
-    // hits ~0.75 only once the destination-city checkpoint is lit.
-    private const val LAST_MILE_PROGRESS_THRESHOLD = 0.75f
-
     /**
-     * Maps Cainiao API response to a [PackageStatus].
+     * Maps a Cainiao `actionCode` to a [PackageStatus]. No fallback to the
+     * top-level `status` field — that field is too coarse (Cainiao uses
+     * `"DELIVERING"` for the entire transit phase, including pre-shipment
+     * advance-shipping notices).
      *
-     * The top-level `status` field is unreliable — Cainiao uses `"DELIVERING"`
-     * for the entire in-transit phase, not just last-mile. So we prefer the
-     * latest action code (authoritative). When the action code is unknown,
-     * we fall back to the top-level status, guarded for the `"DELIVERING"`
-     * case by either:
-     *   - `progressPointList` lit-count (preferred — works for both 3- and
-     *     4-point variants: last-mile when ≥ total - 1 points are lit), or
-     *   - the legacy `progressRate >= 0.75` heuristic when point info is
-     *     missing.
+     * When the action code is unknown but Cainiao gave us a `progressRate`,
+     * we bucket the rate across the six in-flight statuses as a coarse
+     * fallback (see [mapByProgress]). [PackageStatus.DELIVERED] is never
+     * inferred from progress — that requires an explicit sign-for event.
+     *
+     * Buckets follow the Alibaba TOP API reference (apiId 30120). Where the
+     * reference distinguishes states our enum doesn't (e.g. LAST_MILE vs
+     * OUT_FOR_DELIVERY, DUTIES_DUE vs IMPORT_CUSTOMS, RETURNED vs EXCEPTION),
+     * we collapse to the nearest existing enum value — noted inline.
      */
-    fun map(
-        statusRaw: String?,
-        latestActionCode: String?,
-        progressRate: Float? = null,
-        progressPointsLit: Int = 0,
-        progressPointsTotal: Int = 0
-    ): PackageStatus {
-        val byAction = mapActionCode(latestActionCode)
+    fun map(actionCode: String?, progressRate: Float? = null): PackageStatus {
+        val byAction = mapActionCode(actionCode)
         if (byAction != PackageStatus.UNKNOWN) return byAction
-
-        val status = statusRaw?.uppercase().orEmpty()
-        return when {
-            status.contains("SIGN") || status == "DELIVERED" -> PackageStatus.DELIVERED
-            status == "DELIVERING" ->
-                if (isAtLastMile(progressRate, progressPointsLit, progressPointsTotal)) PackageStatus.OUT_FOR_DELIVERY
-                else PackageStatus.IN_TRANSIT
-            status.contains("CUSTOMS") -> PackageStatus.CUSTOMS
-            status.contains("DEPARTURE") || status == "IN_TRANSIT" -> PackageStatus.IN_TRANSIT
-            status.contains("ACCEPT") || status.contains("GTMS") -> PackageStatus.SHIPPED
-            status == "SELLER_PREPARING" || status == "PENDING_PICKUP" -> PackageStatus.ORDER_PLACED
-            status.contains("FAILED") || status.contains("RETURN") || status.contains("LOST") || status.contains("EXCEPTION") -> PackageStatus.EXCEPTION
-            else -> PackageStatus.UNKNOWN
-        }
+        return mapByProgress(progressRate)
     }
 
-    // "Last mile" = the destination-side hop. With Cainiao's point lists this
-    // is when all but one checkpoint are lit (the unlit one being "Delivered"):
-    //   - 4-point: ≥3 lit (origin + dest country + dest city)
-    //   - 3-point: ≥2 lit (origin + dest country)
-    // If point info isn't available we fall back to the progressRate heuristic
-    // — coarser, but better than nothing.
-    private fun isAtLastMile(
-        progressRate: Float?,
-        progressPointsLit: Int,
-        progressPointsTotal: Int
-    ): Boolean = when {
-        progressPointsTotal > 0 -> progressPointsLit >= progressPointsTotal - 1
-        progressRate != null -> progressRate >= LAST_MILE_PROGRESS_THRESHOLD
-        else -> false
+    /**
+     * Coarse fallback used when [mapActionCode] returns [PackageStatus.UNKNOWN].
+     * Splits `[0, 1]` into six equal buckets — one per in-flight status, in
+     * pipeline order. Examples (matches the spec the user gave):
+     *   - `0.50` → [PackageStatus.IN_TRANSIT]
+     *   - `0.98` → [PackageStatus.OUT_FOR_DELIVERY] ("Local Courier")
+     *
+     * Returns [PackageStatus.UNKNOWN] if the rate is null or negative —
+     * better to admit we don't know than to fabricate a stage.
+     */
+    private fun mapByProgress(progressRate: Float?): PackageStatus {
+        val rate = progressRate ?: return PackageStatus.UNKNOWN
+        if (rate < 0f) return PackageStatus.UNKNOWN
+        val sixth = 1f / 6f
+        return when {
+            rate < 1 * sixth -> PackageStatus.ORDER_PLACED      // [0,    16.7%)
+            rate < 2 * sixth -> PackageStatus.SHIPPED           // [16.7, 33.3%)
+            rate < 3 * sixth -> PackageStatus.CUSTOMS_EXPORT    // [33.3, 50%)
+            rate < 4 * sixth -> PackageStatus.IN_TRANSIT        // [50,   66.7%)
+            rate < 5 * sixth -> PackageStatus.CUSTOMS_IMPORT    // [66.7, 83.3%)
+            else              -> PackageStatus.OUT_FOR_DELIVERY  // [83.3, 100%]
+        }
     }
 
     fun mapActionCode(actionCode: String?): PackageStatus {
-        return when (actionCode?.uppercase().orEmpty()) {
-            // Warehouse — order recorded, not yet picked up
-            "GWMS_ACCEPT", "GWMS_PACKAGE", "GWMS_OUTBOUND" -> PackageStatus.ORDER_PLACED
+        val code = actionCode?.uppercase().orEmpty()
+        if (code.isEmpty()) return PackageStatus.UNKNOWN
 
-            // Carrier has the package, domestic processing in the ORIGIN country
-            // (pickup, sorting centers, arrival at departure transport hub) —
-            // still before export customs.
-            "PU_PICKUP_SUCCESS",
-            "SC_INBOUND_SUCCESS", "SC_OUTBOUND_SUCCESS",
-            // SC_TRANS_* are intermediate transit sorting centers on the
-            // domestic origin leg — same kind of event as SC_INBOUND/OUTBOUND,
-            // just at a hub between the first and last sorting center.
-            "SC_TRANS_INBOUND_SUCCESS", "SC_TRANS_OUTBOUND_SUCCESS",
-            "LH_HO_IN_SUCCESS",
-            "CW_INBOUND", "CW_SIGN_IN_SUCCESS", "CW_OUTBOUND" -> PackageStatus.SHIPPED
+        // ── Failures first ──────────────────────────────────────────────
+        // Suffix check has to win over prefix checks below, otherwise
+        // `PU_PICKUP_FAILURE` would slip into the PU_* "shipped" bucket.
+        if (code.endsWith("_FAILURE") || code.endsWith("_FAIL") ||
+            code == "FAILED" || code == "REJECT" || code == "GWMS_EXCEPTION"
+        ) return PackageStatus.EXCEPTION
 
-            "SC_INBOUND_FAILURE" -> PackageStatus.EXCEPTION
+        // Returns — no dedicated RETURNED status yet; surface as EXCEPTION
+        // so the user actually notices something went wrong.
+        if (code.startsWith("RT_") || code == "RETURNED") return PackageStatus.EXCEPTION
 
-            // Export customs — handing over to airline / customs clearance in origin country
-            "LH_HO_AIRLINE", "CC_EX_START", "CC_EX_SUCCESS" -> PackageStatus.CUSTOMS_EXPORT
-
-            // International transit — flying / arrived in destination country hub
-            "LH_DEPART", "LH_ARRIVE" -> PackageStatus.IN_TRANSIT
-
-            // Import customs in destination country
-            "CC_HO_IN_SUCCESS", "CC_HO_OUT_SUCCESS",
-            "CC_IM_START", "CC_IM_SUCCESS" -> PackageStatus.CUSTOMS_IMPORT
-
-            // Local delivery: handed off to last-mile carrier, then on the
-            // truck. GTMS_ACCEPT = parcel received by local delivery company;
-            // GTMS_DO_DEPART = driver departed depot with the parcel.
-            "GTMS_ACCEPT", "GTMS_DO_DEPART" -> PackageStatus.OUT_FOR_DELIVERY
-
-            // Package available at a pickup point
-            "GSTA_INFORM_BUYER", "GTMS_STA_SIGNED" -> PackageStatus.AWAITING_PICKUP
-
-            "SIGN" -> PackageStatus.DELIVERED
-
-            else -> PackageStatus.UNKNOWN
+        // ── Terminal: delivered ─────────────────────────────────────────
+        when (code) {
+            "GTMS_SIGNED", "GTMS_STA_SIGNED", "SIGNED",
+            "GSTA_SIGN", "GSTA_BUYER_SIGN", "STA_SIGN" -> return PackageStatus.DELIVERED
         }
+
+        // ── Awaiting pickup at locker / pickup point ────────────────────
+        when (code) {
+            "GTMS_WAIT_SELF_PICK", "GSTA_INBOUND", "GSTAHUB_INBOUND" ->
+                return PackageStatus.AWAITING_PICKUP
+        }
+
+        // ── Out for delivery / last-mile ────────────────────────────────
+        // The reference splits these into LAST_MILE (with local courier /
+        // at delivery station) and OUT_FOR_DELIVERY (on the truck right
+        // now). Our enum has one bucket — OUT_FOR_DELIVERY ("Local
+        // Courier") — so both collapse to it.
+        when (code) {
+            "GTMS_DELIVERING", "SENT_SCAN", "GTMS_RE_DELIVERING",
+            "GTMS_ACCEPT" -> return PackageStatus.OUT_FOR_DELIVERY
+        }
+        if (code.startsWith("GTMS_SC_") ||
+            code.startsWith("GTMS_DO_") ||
+            code.startsWith("GTMS_STATION_")
+        ) return PackageStatus.OUT_FOR_DELIVERY
+
+        // ── Import customs (destination) ────────────────────────────────
+        // DUTIES_DUE (CUS_TAX) doesn't have its own enum value; folded into
+        // CUSTOMS_IMPORT since it's still a customs hold, just user-actionable.
+        if (code == "CUS_TAX") return PackageStatus.CUSTOMS_IMPORT
+        if (code.startsWith("CC_IM_") ||
+            code.startsWith("CC_HO_") ||
+            code.startsWith("CIQ_") ||
+            code.startsWith("CUS_")
+        ) return PackageStatus.CUSTOMS_IMPORT
+
+        // ── In transit (line-haul, transit hubs, transit-country clearance) ─
+        if (code.startsWith("LH_") ||
+            code.startsWith("TD_") ||
+            code.startsWith("CC_TRANS_")
+        ) return PackageStatus.IN_TRANSIT
+
+        // ── Export customs (origin) ─────────────────────────────────────
+        if (code.startsWith("CC_EX_")) return PackageStatus.CUSTOMS_EXPORT
+
+        // ── Origin processing — picked up, sorting, in warehouse ────────
+        // GWMS_ACCEPT is excluded (it's the order-accepted event, not
+        // physical processing).
+        if (code.startsWith("PU_") ||
+            code.startsWith("SC_") ||
+            (code.startsWith("GWMS_") && code != "GWMS_ACCEPT")
+        ) return PackageStatus.SHIPPED
+
+        // ── Order placed / consignment declared ─────────────────────────
+        when (code) {
+            "CONSIGN", "OM_CONSIGN", "GTMS_ASN",
+            "GWMS_ACCEPT" -> return PackageStatus.ORDER_PLACED
+        }
+
+        // GTMS_STA_* (address reroutes), GTMS_OTHER / GSTA_OTHER, GOT /
+        // DEPARTURE / ARRIVAL / GTMS_RELABEL, and every non-official
+        // opcode (CW_*, COMMON_*, LAST_MILE_ASN_NOTIFY, POSTMAN_POST, …)
+        // intentionally fall through to UNKNOWN — `map()` then leans on
+        // `progressRate` for the coarse status bucket.
+        return PackageStatus.UNKNOWN
     }
 }

@@ -43,12 +43,14 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -235,6 +237,22 @@ fun DetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { if (!isRefreshing) viewModel.refresh(packageId) },
+                        enabled = !isRefreshing
+                    ) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.refresh)
+                            )
+                        }
+                    }
                     IconButton(onClick = { onEditClick(packageId) }) {
                         Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit_package))
                     }
@@ -377,19 +395,16 @@ private fun DetailContent(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(paddingValues)
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
             .nestedScroll(collapseScrollConnection)
     ) {
-        if (isRefreshing) {
-            LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth(),
-                strokeCap = StrokeCap.Round
-            )
-        }
-
         // Status header with small square thumbnail
         Row(
             modifier = Modifier
@@ -654,6 +669,17 @@ private fun DetailContent(
                     }
                 }
             }
+        }
+    }
+        // Refresh indicator — overlayed on top of the content so it doesn't
+        // shove the header down by a few dp when it appears mid-refresh.
+        if (isRefreshing) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter),
+                strokeCap = StrokeCap.Round
+            )
         }
     }
 }
