@@ -11,5 +11,8 @@ data class TrackingResult(
     // Cainiao's `processInfo.progressRate` — 0.0..1.0 across the four
     // origin → destination-country → destination-city → delivered checkpoints.
     val progressRate: Float?,
-    val destCarrier: DestCarrierInfo? = null
+    val destCarrier: DestCarrierInfo? = null,
+    // Serialized Cainiao response — captured for the hidden debug screen
+    // only. Re-emitted into PackageEntity.rawApiJson on every refresh.
+    val rawApiJson: String? = null
 )

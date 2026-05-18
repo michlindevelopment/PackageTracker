@@ -15,4 +15,7 @@ sealed class Screen(val route: String) {
     data object Captcha : Screen("captcha/{trackingNumber}") {
         fun createRoute(trackingNumber: String) = "captcha/$trackingNumber"
     }
+    data object RawResponse : Screen("raw_response/{packageId}") {
+        fun createRoute(packageId: Long) = "raw_response/$packageId"
+    }
 }

@@ -15,7 +15,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -131,6 +133,7 @@ private val STAGE_LABELS = listOf(
 fun DetailScreen(
     packageId: Long,
     onEditClick: (Long) -> Unit,
+    onShowRawResponse: () -> Unit,
     onBack: () -> Unit,
     viewModel: DetailViewModel = hiltViewModel()
 ) {
@@ -323,7 +326,8 @@ fun DetailScreen(
                     },
                     onClearLocalTrackingNumber = {
                         viewModel.setLocalTrackingNumber(packageId, null)
-                    }
+                    },
+                    onShowRawResponse = onShowRawResponse
                 )
             }
         }
@@ -341,7 +345,8 @@ private fun DetailContent(
     onRequestSmsPermission: () -> Unit,
     onCopyMessage: () -> Unit,
     onSaveLocalTrackingNumber: (String) -> Unit,
-    onClearLocalTrackingNumber: () -> Unit
+    onClearLocalTrackingNumber: () -> Unit,
+    onShowRawResponse: () -> Unit
 ) {
     var showLocalTnDialog by remember { mutableStateOf(false) }
 
@@ -569,6 +574,7 @@ private fun DetailContent(
 
                 ProgressStepper(
                     currentStatus = pkg.status,
+                    onSecretTap = onShowRawResponse,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                 )
             }
@@ -685,7 +691,16 @@ private fun DetailContent(
 }
 
 @Composable
-private fun ProgressStepper(currentStatus: PackageStatus, modifier: Modifier = Modifier) {
+private fun ProgressStepper(
+    currentStatus: PackageStatus,
+    onSecretTap: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Hidden debug shortcut: five taps on this card within ~1.5 s opens the
+    // raw-response screen. Reset count whenever the gap between taps is too
+    // long so accidental retaps don't accumulate over a long session.
+    var tapCount by remember { mutableStateOf(0) }
+    var lastTapAt by remember { mutableStateOf(0L) }
     val isException = currentStatus == PackageStatus.EXCEPTION
         || currentStatus == PackageStatus.UNKNOWN
         || currentStatus == PackageStatus.NOT_YET_SENT
@@ -700,7 +715,20 @@ private fun ProgressStepper(currentStatus: PackageStatus, modifier: Modifier = M
     val labelLineHeight = with(density) { 12.dp.toSp() }
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
+                val now = System.currentTimeMillis()
+                tapCount = if (now - lastTapAt > 1500L) 1 else tapCount + 1
+                lastTapAt = now
+                if (tapCount >= 5) {
+                    tapCount = 0
+                    onSecretTap()
+                }
+            },
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {

@@ -25,5 +25,8 @@ data class TrackedPackage(
     // the package (not DestCarrierInfo) because it's manually entered and
     // we want it preserved across Cainiao refreshes that rebuild destCarrier
     // from API data. Used only as an additional needle for SMS scanning.
-    val localTrackingNumber: String? = null
+    val localTrackingNumber: String? = null,
+    // Last raw Cainiao API response, serialized JSON. Surfaced only by the
+    // hidden debug screen reachable via 5-tap on the Shipping Progress card.
+    val rawApiJson: String? = null
 )

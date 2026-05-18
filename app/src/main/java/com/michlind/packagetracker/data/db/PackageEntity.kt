@@ -37,5 +37,10 @@ data class PackageEntity(
     // Israel Post / local-carrier handover number printed on a delivery SMS).
     // Used only as an extra needle for the SMS inbox scan, alongside the
     // Cainiao tracking number.
-    val localTrackingNumber: String? = null
+    val localTrackingNumber: String? = null,
+    // Last raw Cainiao API response (serialized JSON of CainiaoResponse).
+    // Only used by the hidden debug screen reachable via 5-tap on the
+    // Shipping Progress card. Nullable for packages that have never been
+    // refreshed (or for "To Ship" rows with no real TN).
+    val rawApiJson: String? = null
 )

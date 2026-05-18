@@ -124,7 +124,10 @@ class AddEditViewModel @Inject constructor(
                 progressRate = result?.progressRate ?: existing?.progressRate,
                 // Preserve user-supplied local-courier TN across edits —
                 // rebuilding the model from scratch would otherwise null it.
-                localTrackingNumber = existing?.localTrackingNumber
+                localTrackingNumber = existing?.localTrackingNumber,
+                // Same reason — keep the cached raw response so the debug
+                // screen still works after an edit.
+                rawApiJson = existing?.rawApiJson
             )
 
             val savedId = if (editingPackageId != null) {

@@ -168,6 +168,12 @@ class PackageRepositoryImpl @Inject constructor(
                 )
             }
 
+            // Captured for the hidden debug screen. Re-serialize the parsed
+            // response (we don't have the raw bytes — Retrofit/Gson consume
+            // them). Loses any fields we don't model in CainiaoModels but
+            // covers every field the UI actually depends on.
+            val rawApiJson = runCatching { gson.toJson(response) }.getOrNull()
+
             Result.success(
                 TrackingResult(
                     status = status,
@@ -178,7 +184,8 @@ class PackageRepositoryImpl @Inject constructor(
                     originCountry = data.originCountry,
                     destCountry = data.destCountry,
                     progressRate = data.processInfo?.progressRate,
-                    destCarrier = destCarrier
+                    destCarrier = destCarrier,
+                    rawApiJson = rawApiJson
                 )
             )
         } catch (e: Exception) {
@@ -241,6 +248,7 @@ class PackageRepositoryImpl @Inject constructor(
                     destCarrierPhone = tracking.destCarrier?.phone ?: existing.destCarrierPhone,
                     destCarrierUrl = tracking.destCarrier?.url ?: existing.destCarrierUrl,
                     destCarrierEmail = tracking.destCarrier?.email ?: existing.destCarrierEmail,
+                    rawApiJson = tracking.rawApiJson ?: existing.rawApiJson,
                     isReceived = existing.isReceived || nowDelivered
                 )
                 dao.update(updated)
@@ -290,7 +298,8 @@ class PackageRepositoryImpl @Inject constructor(
             externalOrderId = externalOrderId,
             progressRate = progressRate,
             destCarrier = destCarrier,
-            localTrackingNumber = localTrackingNumber
+            localTrackingNumber = localTrackingNumber,
+            rawApiJson = rawApiJson
         )
     }
 
@@ -317,6 +326,7 @@ class PackageRepositoryImpl @Inject constructor(
         destCarrierPhone = destCarrier?.phone,
         destCarrierUrl = destCarrier?.url,
         destCarrierEmail = destCarrier?.email,
-        localTrackingNumber = localTrackingNumber
+        localTrackingNumber = localTrackingNumber,
+        rawApiJson = rawApiJson
     )
 }
