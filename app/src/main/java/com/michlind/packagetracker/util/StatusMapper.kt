@@ -54,37 +54,50 @@ object StatusMapper {
         val code = actionCode?.uppercase().orEmpty()
         if (code.isEmpty()) return PackageStatus.UNKNOWN
 
-        // ── Failures first ──────────────────────────────────────────────
-        // Suffix check has to win over prefix checks below, otherwise
-        // `PU_PICKUP_FAILURE` would slip into the PU_* "shipped" bucket.
+        // ── Failures & cancellations first ──────────────────────────────
+        // Suffix checks must win over the prefix checks below — otherwise
+        // GWMS_REJECT / GWMS_CANCEL slip into the GWMS_* "shipped" bucket.
+        // LH_POST_COLLECTION is a failure event despite the missing suffix.
         if (code.endsWith("_FAILURE") || code.endsWith("_FAIL") ||
-            code == "FAILED" || code == "REJECT" || code == "GWMS_EXCEPTION"
+            code.endsWith("_REJECT") || code.endsWith("_CANCEL") ||
+            code == "FAILED" || code == "REJECT" || code == "GWMS_EXCEPTION" ||
+            code == "LH_POST_COLLECTION"
         ) return PackageStatus.EXCEPTION
 
         // Returns — no dedicated RETURNED status yet; surface as EXCEPTION
         // so the user actually notices something went wrong.
         if (code.startsWith("RT_") || code == "RETURNED") return PackageStatus.EXCEPTION
 
-        // ── Terminal: delivered ─────────────────────────────────────────
+        // ── Terminal: delivered — recipient/buyer actually signed ───────
+        // NB: GTMS_STA_SIGNED is NOT here — that is the station signing the
+        // parcel IN (arrival), handled as AWAITING_PICKUP below.
         when (code) {
-            "GTMS_SIGNED", "GTMS_STA_SIGNED", "SIGNED",
-            "GSTA_SIGN", "GSTA_BUYER_SIGN", "STA_SIGN" -> return PackageStatus.DELIVERED
+            "GTMS_SIGNED", "SIGNED", "GSTA_SIGN",
+            "GSTA_BUYER_SIGN", "STA_SIGN" -> return PackageStatus.DELIVERED
         }
 
         // ── Awaiting pickup at locker / pickup point ────────────────────
+        // GTMS_STA_SIGNED is the *station* signing the parcel IN (arrived
+        // at the pickup station) — not the customer collecting it.
+        // GSTA_INFORM_BUYER (buyer notified to collect) and POSTMAN_POST
+        // (deposited in a parcel locker) likewise mean the parcel is
+        // waiting for the customer to pick it up. Note GSTA_INBOUND (the
+        // pickup point itself) belongs here, but GSTAHUB_INBOUND (an
+        // upstream distribution hub) does not — see OUT_FOR_DELIVERY below.
         when (code) {
-            "GTMS_WAIT_SELF_PICK", "GSTA_INBOUND", "GSTAHUB_INBOUND" ->
+            "GTMS_WAIT_SELF_PICK", "GSTA_INBOUND", "GTMS_STA_SIGNED",
+            "GSTA_INFORM_BUYER", "POSTMAN_POST" ->
                 return PackageStatus.AWAITING_PICKUP
         }
 
         // ── Out for delivery / last-mile ────────────────────────────────
-        // The reference splits these into LAST_MILE (with local courier /
-        // at delivery station) and OUT_FOR_DELIVERY (on the truck right
-        // now). Our enum has one bucket — OUT_FOR_DELIVERY ("Local
-        // Courier") — so both collapse to it.
+        // GSTAHUB_INBOUND = parcel at a self-pickup *distribution hub* —
+        // still moving through the local network toward the pickup point
+        // (the GSTA-network analogue of a destination sorting centre), so
+        // it's last-mile, not yet customer-collectable.
         when (code) {
             "GTMS_DELIVERING", "SENT_SCAN", "GTMS_RE_DELIVERING",
-            "GTMS_ACCEPT" -> return PackageStatus.OUT_FOR_DELIVERY
+            "GTMS_ACCEPT", "GSTAHUB_INBOUND" -> return PackageStatus.OUT_FOR_DELIVERY
         }
         if (code.startsWith("GTMS_SC_") ||
             code.startsWith("GTMS_DO_") ||
@@ -92,8 +105,6 @@ object StatusMapper {
         ) return PackageStatus.OUT_FOR_DELIVERY
 
         // ── Import customs (destination) ────────────────────────────────
-        // DUTIES_DUE (CUS_TAX) doesn't have its own enum value; folded into
-        // CUSTOMS_IMPORT since it's still a customs hold, just user-actionable.
         if (code == "CUS_TAX") return PackageStatus.CUSTOMS_IMPORT
         if (code.startsWith("CC_IM_") ||
             code.startsWith("CC_HO_") ||
@@ -111,8 +122,6 @@ object StatusMapper {
         if (code.startsWith("CC_EX_")) return PackageStatus.CUSTOMS_EXPORT
 
         // ── Origin processing — picked up, sorting, in warehouse ────────
-        // GWMS_ACCEPT is excluded (it's the order-accepted event, not
-        // physical processing).
         if (code.startsWith("PU_") ||
             code.startsWith("SC_") ||
             (code.startsWith("GWMS_") && code != "GWMS_ACCEPT")
@@ -124,11 +133,6 @@ object StatusMapper {
             "GWMS_ACCEPT" -> return PackageStatus.ORDER_PLACED
         }
 
-        // GTMS_STA_* (address reroutes), GTMS_OTHER / GSTA_OTHER, GOT /
-        // DEPARTURE / ARRIVAL / GTMS_RELABEL, and every non-official
-        // opcode (CW_*, COMMON_*, LAST_MILE_ASN_NOTIFY, POSTMAN_POST, …)
-        // intentionally fall through to UNKNOWN — `map()` then leans on
-        // `progressRate` for the coarse status bucket.
         return PackageStatus.UNKNOWN
     }
 }
