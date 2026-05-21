@@ -103,10 +103,26 @@ class PackageRepositoryImpl @Inject constructor(
 
     override suspend fun setLocalTrackingNumber(id: Long, trackingNumber: String?) {
         val normalized = trackingNumber?.trim()?.takeIf { it.isNotEmpty() }
-        dao.setLocalTrackingNumber(id, normalized)
-        // Keep the warm cache consistent — the Detail screen reads from
-        // peekById on entry and would otherwise show stale data after a set.
-        cache[id]?.let { cache[id] = it.copy(localTrackingNumber = normalized) }
+        val pkg = dao.getById(id) ?: return
+        if (pkg.trackingNumber.isNotBlank()) {
+            // Combined packages share one Cainiao tracking number and one
+            // local courier handling the whole combined parcel — so the
+            // local-courier TN is a group-level value. Write it to every
+            // sibling, otherwise their SMS tab can't observe that TN.
+            dao.setLocalTrackingNumberForGroup(pkg.trackingNumber, normalized)
+            // Keep the warm cache consistent for every sibling we hold a
+            // copy of — the Detail screen reads from peekById on entry.
+            cache.forEach { (cid, cached) ->
+                if (cached.trackingNumber == pkg.trackingNumber) {
+                    cache[cid] = cached.copy(localTrackingNumber = normalized)
+                }
+            }
+        } else {
+            // Blank tracking number → standalone package (its own group);
+            // a group update keyed on '' would hit every untracked package.
+            dao.setLocalTrackingNumber(id, normalized)
+            cache[id]?.let { cache[id] = it.copy(localTrackingNumber = normalized) }
+        }
     }
 
     override suspend fun getActiveLocalTrackingNumbers(): List<String> =

@@ -8,7 +8,8 @@
       "PowerShell(*)",
       "WebFetch(domain:documentation.swing2app.com)",
       "WebFetch(domain:community.auth0.com)",
-      "WebFetch(domain:www.webviewgold.com)"
+      "WebFetch(domain:www.webviewgold.com)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

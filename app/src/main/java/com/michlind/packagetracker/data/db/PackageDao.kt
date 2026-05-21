@@ -78,6 +78,13 @@ interface PackageDao {
     @Query("UPDATE packages SET localTrackingNumber = :tn WHERE id = :id")
     suspend fun setLocalTrackingNumber(id: Long, tn: String?)
 
+    // Combined packages share one Cainiao tracking number and are handled by
+    // a single local courier, so the local-courier TN is a group-level value.
+    // Never call with a blank trackingNumber — that would overwrite the local
+    // TN of every untracked package at once.
+    @Query("UPDATE packages SET localTrackingNumber = :tn WHERE trackingNumber = :trackingNumber")
+    suspend fun setLocalTrackingNumberForGroup(trackingNumber: String, tn: String?)
+
     // Used by HomeViewModel.syncStatus to feed the SMS scanner. Returns the
     // user-supplied local-courier TNs for non-received packages so they're
     // picked up alongside the main Cainiao TNs.

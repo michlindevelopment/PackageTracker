@@ -30,6 +30,11 @@ interface PackageRepository {
     /**
      * Set (or clear, with null/blank) the user-supplied local-courier
      * tracking number. Used only as an extra needle for SMS scanning.
+     *
+     * For a combined package (siblings sharing one Cainiao tracking number)
+     * this writes to the whole group — one combined parcel is handled by one
+     * local courier, so editing it on any sibling updates them all, and every
+     * sibling's SMS tab can then match that local-courier TN.
      */
     suspend fun setLocalTrackingNumber(id: Long, trackingNumber: String?)
 
