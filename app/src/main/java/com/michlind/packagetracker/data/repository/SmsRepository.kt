@@ -40,7 +40,7 @@ class SmsRepository @Inject constructor(
             PackageManager.PERMISSION_GRANTED
 
     /**
-     * Reactive list of cached SMS hits for [trackingNumber], newest first.
+     * Reactive list of cached SMS hits for [trackingNumber], oldest first.
      * Doesn't trigger a scan — call [scanForTrackingNumbers] (or wait for
      * the next syncStatus() to do it) to populate / refresh.
      */
@@ -50,7 +50,7 @@ class SmsRepository @Inject constructor(
         }
 
     /**
-     * Reactive list of cached SMS hits for any of [trackingNumbers], newest
+     * Reactive list of cached SMS hits for any of [trackingNumbers], oldest
      * first; rows matching more than one TN appear once. Used for the
      * package detail screen so the SMS tab shows Cainiao-TN hits plus
      * local-courier-TN hits in one stream.

@@ -363,13 +363,14 @@ private fun DetailContent(
 
     val nameTooltipState = rememberTooltipState(isPersistent = true)
     val tooltipScope = rememberCoroutineScope()
-    // Tracking and SMS are always present; Local courier only appears once
-    // Cainiao reports a destination carrier (typically post-customs).
-    val showCourierTab = pkg.destCarrier != null
+    // Tracking, SMS and Courier are always present. The Courier tab shows the
+    // Cainiao-reported destination carrier once available, but stays visible
+    // beforehand so the local-courier tracking number can always be entered
+    // (and so a once-seen carrier survives a reinstall that wiped the DB).
     val trackingIndex = 0
     val smsIndex = 1
-    val courierIndex = if (showCourierTab) 2 else -1
-    val tabCount = 2 + (if (showCourierTab) 1 else 0)
+    val courierIndex = 2
+    val tabCount = 3
     val pagerState = rememberPagerState(pageCount = { tabCount })
     val tabScope = rememberCoroutineScope()
 
@@ -580,11 +581,10 @@ private fun DetailContent(
             }
         }
 
-        // Tabs — pinned right under Shipping Progress. Tracking and SMS
-        // are always shown; Local courier hides itself until Cainiao
-        // reports a destination carrier.
+        // Tabs — pinned right under Shipping Progress. Tracking, SMS and
+        // Courier are all always shown.
         PrimaryTabRow(
-            selectedTabIndex = pagerState.currentPage.coerceAtMost(tabCount - 1),
+            selectedTabIndex = pagerState.currentPage,
             modifier = Modifier.padding(top = 8.dp)
         ) {
             Tab(
@@ -623,25 +623,23 @@ private fun DetailContent(
                     }
                 }
             )
-            if (showCourierTab) {
-                Tab(
-                    selected = pagerState.currentPage == courierIndex,
-                    onClick = { tabScope.launch { pagerState.animateScrollToPage(courierIndex) } },
-                    text = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.LocalShipping,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text("Courier")
-                        }
+            Tab(
+                selected = pagerState.currentPage == courierIndex,
+                onClick = { tabScope.launch { pagerState.animateScrollToPage(courierIndex) } },
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.LocalShipping,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text("Courier")
                     }
-                )
-            }
+                }
+            )
         }
 
         // Swipeable pages — each owns its own LazyColumn so vertical
@@ -665,14 +663,12 @@ private fun DetailContent(
                         onRequestPermission = onRequestSmsPermission,
                         onCopyMessage = onCopyMessage
                     )
-                    courierIndex -> pkg.destCarrier?.let {
-                        courierTabItems(
-                            carrier = it,
-                            localTrackingNumber = pkg.localTrackingNumber,
-                            onAddLocal = { showLocalTnDialog = true },
-                            onRemoveLocal = onClearLocalTrackingNumber
-                        )
-                    }
+                    courierIndex -> courierTabItems(
+                        carrier = pkg.destCarrier,
+                        localTrackingNumber = pkg.localTrackingNumber,
+                        onAddLocal = { showLocalTnDialog = true },
+                        onRemoveLocal = onClearLocalTrackingNumber
+                    )
                 }
             }
         }
@@ -831,7 +827,7 @@ private fun LazyListScope.trackingHistoryItems(
 }
 
 private fun LazyListScope.courierTabItems(
-    carrier: DestCarrierInfo,
+    carrier: DestCarrierInfo?,
     localTrackingNumber: String?,
     onAddLocal: () -> Unit,
     onRemoveLocal: () -> Unit
@@ -1081,18 +1077,18 @@ private fun annotatedCourierBlob(body: String): AnnotatedString = buildAnnotated
 
 @Composable
 private fun CourierCard(
-    carrier: DestCarrierInfo,
+    carrier: DestCarrierInfo?,
     localTrackingNumber: String?,
     onAddLocalTrackingNumber: () -> Unit,
     onRemoveLocalTrackingNumber: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val hasRtl = remember(carrier.phone) { carrier.phone?.let(::isRtlText) ?: false }
-    val phoneAnnotated = remember(carrier.phone) {
-        carrier.phone?.let { annotatedCourierBlob(it) }
+    val hasRtl = remember(carrier?.phone) { carrier?.phone?.let(::isRtlText) ?: false }
+    val phoneAnnotated = remember(carrier?.phone) {
+        carrier?.phone?.let { annotatedCourierBlob(it) }
     }
-    val urlAnnotated = remember(carrier.url) {
-        carrier.url?.let { url ->
+    val urlAnnotated = remember(carrier?.url) {
+        carrier?.url?.let { url ->
             val href = if (url.startsWith("http", ignoreCase = true)) url else "https://$url"
             val display = url.removePrefix("https://").removePrefix("http://").trimEnd('/')
             buildAnnotatedString {
@@ -1110,8 +1106,8 @@ private fun CourierCard(
             }
         }
     }
-    val emailAnnotated = remember(carrier.email) {
-        carrier.email?.takeIf { it.isNotBlank() }?.let { email ->
+    val emailAnnotated = remember(carrier?.email) {
+        carrier?.email?.takeIf { it.isNotBlank() }?.let { email ->
             buildAnnotatedString {
                 withLink(
                     LinkAnnotation.Url(
@@ -1152,12 +1148,25 @@ private fun CourierCard(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                     Text(
-                        text = carrier.name,
+                        text = carrier?.name ?: stringResource(R.string.courier_not_reported),
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.SemiBold
-                        )
+                        ),
+                        color = if (carrier != null) Color.Unspecified
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                 }
+            }
+
+            // Before Cainiao reports a destination carrier, explain why the
+            // card is empty — but keep the local-TN entry below available.
+            if (carrier == null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.courier_not_reported_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
             }
 
             // User-supplied local-courier TN. Sits directly under the carrier
@@ -1215,8 +1224,9 @@ private fun CourierCard(
             // many couriers mash both into one field and surfacing it twice
             // is just noise.
             emailAnnotated?.let { email ->
-                val phoneText = carrier.phone.orEmpty()
-                if (!phoneText.contains(carrier.email!!, ignoreCase = true)) {
+                val emailRaw = carrier?.email
+                val phoneText = carrier?.phone.orEmpty()
+                if (emailRaw != null && !phoneText.contains(emailRaw, ignoreCase = true)) {
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = email,

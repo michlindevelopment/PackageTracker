@@ -41,5 +41,7 @@
     <string name="add_local_courier_tn_title">Local courier tracking number</string>
     <string name="add_local_courier_tn_help">Used only as an extra needle when scanning your SMS inbox for delivery notifications from the local courier.</string>
     <string name="local_courier_tn_label">Local tracking number</string>
+    <string name="courier_not_reported">Not reported</string>
+    <string name="courier_not_reported_help">The destination courier appears here once the carrier hands the parcel to local delivery (usually after customs). You can add a local tracking number now to match delivery SMS in the meantime.</string>
     <string name="remove">Remove</string>
 </resources>

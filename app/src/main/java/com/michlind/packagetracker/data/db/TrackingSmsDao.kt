@@ -10,13 +10,13 @@ import kotlinx.coroutines.flow.Flow
 interface TrackingSmsDao {
 
     /**
-     * Reactive list of SMS hits for a tracking number, newest first.
-     * The DetailScreen "SMS" tab observes this so it updates live as
-     * syncStatus() lands new matches.
+     * Reactive list of SMS hits for a tracking number, oldest first (read
+     * chronologically, like a messages thread). The DetailScreen "SMS" tab
+     * observes this so it updates live as syncStatus() lands new matches.
      */
     @Query(
         "SELECT * FROM tracking_sms WHERE trackingNumber = :trackingNumber " +
-            "ORDER BY timestamp DESC"
+            "ORDER BY timestamp ASC"
     )
     fun observeForTrackingNumber(trackingNumber: String): Flow<List<TrackingSmsEntity>>
 
@@ -28,7 +28,7 @@ interface TrackingSmsDao {
      */
     @Query(
         "SELECT * FROM tracking_sms WHERE trackingNumber IN (:trackingNumbers) " +
-            "GROUP BY id ORDER BY timestamp DESC"
+            "GROUP BY id ORDER BY timestamp ASC"
     )
     fun observeForTrackingNumbers(trackingNumbers: List<String>): Flow<List<TrackingSmsEntity>>
 
