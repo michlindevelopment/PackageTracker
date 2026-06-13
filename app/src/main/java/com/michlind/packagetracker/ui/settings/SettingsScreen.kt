@@ -373,8 +373,8 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodyLarge
                     )
                     Text(
-                        text = "To ship: $toShipPages • Shipped: $shippedPages • " +
-                            "Processed: $processedPages",
+                        text = "Processing: $toShipPages • Processed: $shippedPages • " +
+                            "Completed: $processedPages",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                     )
@@ -673,17 +673,17 @@ private fun ImportBudgetSheet(
             )
             Spacer(Modifier.height(12.dp))
             PageBudgetRow(
-                label = "To ship",
+                label = "Processing",
                 value = toShip,
                 onChange = { toShip = it.coerceIn(0, 100) }
             )
             PageBudgetRow(
-                label = "Shipped",
+                label = "Processed",
                 value = shipped,
                 onChange = { shipped = it.coerceIn(0, 100) }
             )
             PageBudgetRow(
-                label = "Processed",
+                label = "Completed",
                 value = processed,
                 onChange = { processed = it.coerceIn(0, 100) }
             )

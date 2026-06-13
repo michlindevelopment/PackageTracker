@@ -13,8 +13,15 @@ import javax.inject.Singleton
 /**
  * Per-tab "max expand passes" budget for the AliExpress import.
  * 0 = skip the tab entirely, >0 = max number of "View more" clicks before
- * we stop expanding that tab. Default 20/20/1 — the Processed tab is
- * usually huge so we only pull the first page unless the user opts in.
+ * we stop expanding that tab. Default 20/20/1.
+ *
+ * The storage keys predate AliExpress's tab rename and are kept as-is so
+ * saved user values survive. They now map to the current tabs:
+ *   toShipPages  (ali_pages_to_ship)  -> "Processing" tab (awaiting shipment)
+ *   shippedPages (ali_pages_shipped)  -> "Processed"  tab (in transit)
+ *   processedPages (ali_pages_processed) -> "Completed" tab (received) — kept
+ *     at 1 because it's usually huge; we only pull the first page unless the
+ *     user opts in.
  */
 @Singleton
 class AliImportPreferenceRepository @Inject constructor(

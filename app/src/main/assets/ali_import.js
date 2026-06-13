@@ -4,6 +4,18 @@
   var BRIDGE = window.AliBridge;
   if (!BRIDGE) return;
 
+  // Diagnostic logger — surfaces under the Android `DTAG` tag via the bridge.
+  // Falls back to console.log (captured under BgAliImport) if an older build
+  // doesn't expose BRIDGE.dlog, so the lines never silently disappear.
+  function dlog(msg) {
+    try {
+      if (BRIDGE.dlog) BRIDGE.dlog(String(msg));
+      else console.log('DTAG ' + msg);
+    } catch (_) {
+      try { console.log('DTAG ' + msg); } catch (__) {}
+    }
+  }
+
   // Seed: orderIds we've already imported AND already have a tracking number
   // for. Populated on the Kotlin side before this script runs. We skip the
   // per-order iframe tracking-number lookup for these — re-fetching it would
@@ -211,17 +223,24 @@
     el.dispatchEvent(new MouseEvent('click', opts));
   }
 
-  // The orders page has a `comet-tabs-nav-item` row at the top. We import only
-  // from the "To ship" and "Shipped" tabs — completed/received orders are
-  // intentionally skipped per user preference. The match function gets the
-  // trimmed lowercased label so it can apply whatever shape the tab uses
-  // (e.g. "To ship", "To ship (5)", "To Ship 5").
+  // The orders page has a `comet-tabs-nav-item` row at the top. AliExpress's
+  // current tab set is: "To pay", "Processing", "Processed", "Completed"
+  // (plus a "View all"). We import from "Processing" (not yet shipped) and
+  // "Processed" (in transit), and take one page of "Completed" to mark recent
+  // deliveries received. The match function gets the trimmed lowercased label
+  // so it can absorb trailing count badges (e.g. "Processed (10)").
+  //
+  // Resolves to TRUE if a matching tab was found and clicked, FALSE otherwise.
+  // The caller MUST NOT scrape when this returns false: a miss means the page
+  // is still on its default "View all" view (the entire order history), and
+  // expanding that pulls in hundreds of unwanted orders.
   function clickTab(matchFn, debugName) {
     return new Promise(function (resolve) {
       var tabs = document.querySelectorAll('.comet-tabs-nav-item, [role="tab"]');
       if (tabs.length === 0) {
         console.log('[Ali] no tab elements found — skipping ' + debugName + ' click');
-        resolve();
+        dlog('tab="' + debugName + '" NO_TAB_ELEMENTS');
+        resolve(false);
         return;
       }
       var labels = [];
@@ -232,33 +251,39 @@
         var norm = raw.toLowerCase().replace(/\s+/g, ' ').trim();
         if (matchFn(norm)) {
           console.log('[Ali] clicking "' + raw + '" tab (matched ' + debugName + ')');
+          dlog('tab="' + debugName + '" MATCHED label="' + raw + '"');
           try { t.scrollIntoView({ block: 'center' }); } catch (_) {}
           try { realClick(t); } catch (e) {
             console.log('[Ali] tab click (synthetic) failed: ' + (e && e.message));
           }
           // Fallback to native click in case React's handler is bound on click only.
           try { t.click(); } catch (_) {}
-          setTimeout(resolve, CFG.tabSettleMs);
+          setTimeout(function () { resolve(true); }, CFG.tabSettleMs);
           return;
         }
       }
       console.log('[Ali] no tab matched ' + debugName + '; tabs=' + JSON.stringify(labels));
-      resolve();
+      dlog('tab="' + debugName + '" NO_MATCH tabs=' + JSON.stringify(labels));
+      resolve(false);
     });
   }
 
-  // "To ship" matchers: must contain "to ship" but NOT immediately followed by
-  // "ped" (which would be "shipped"). Allows trailing count badges.
-  function isToShipLabel(s) {
-    return /(^|[^a-z])to\s*ship(?!ped)([^a-z]|$)/.test(s);
+  // Tab matchers for AliExpress's current taxonomy. Each must match its own
+  // tab without bleeding into a sibling — note "processing" vs "processed"
+  // share the "process" prefix, so both use full-word anchors. Trailing count
+  // badges (" (10)") satisfy the [^a-z] boundary.
+  //
+  //   isProcessingLabel -> "Processing"  (paid, awaiting shipment)
+  //   isProcessedLabel  -> "Processed"   (shipped / in transit)
+  //   isCompletedLabel  -> "Completed"   (delivered / received)
+  function isProcessingLabel(s) {
+    return /(^|[^a-z])processing([^a-z]|$)/.test(s);
   }
-  // "Shipped" matcher: must contain "shipped" as a standalone word.
-  function isShippedLabel(s) {
-    return /(^|[^a-z])shipped([^a-z]|$)/.test(s);
-  }
-  // "Processed" tab — matches "processed" or AliExpress's "completed" variant.
   function isProcessedLabel(s) {
-    return /(^|[^a-z])(processed|completed)([^a-z]|$)/.test(s);
+    return /(^|[^a-z])processed([^a-z]|$)/.test(s);
+  }
+  function isCompletedLabel(s) {
+    return /(^|[^a-z])completed([^a-z]|$)/.test(s);
   }
 
   function getCookie(name, key) {
@@ -1033,9 +1058,11 @@
     // "View more" button until none is left or until maxPasses passes.
     // maxPasses is per-tab so the user can pull deep history from one tab
     // without paying for it on the others (Processed defaults to 1).
-    function expandAndExtract(maxPasses) {
+    function expandAndExtract(maxPasses, debugName) {
       return new Promise(function (resolve) {
-        var clickPasses = 0;
+        var clickPasses = 0;   // = number of "View more" pages opened on this tab
+        var tabAdded = 0;      // new orders attributed to this tab
+        var snapshotNo = 0;
         function ingestSnapshot() {
           var snap = extractOrdersFromDOM();
           var added = 0;
@@ -1046,7 +1073,17 @@
             all.push(snap[i]);
             added++;
           }
+          tabAdded += added;
           console.log('[Ali] snapshot: +' + added + ' new (total=' + all.length + ')');
+          // After the initial snapshot (snapshotNo 0) the DOM holds the first
+          // page; each later snapshot follows the Nth "View more" click. So
+          // pagesOpened == clickPasses and newThisPage == added.
+          dlog('tab="' + debugName + '" pagesOpened=' + clickPasses +
+            ' domCards=' + snap.length +
+            ' newThisPage=' + added +
+            ' tabTotal=' + tabAdded +
+            ' grandTotal=' + all.length);
+          snapshotNo++;
           return added;
         }
         function step() {
@@ -1054,6 +1091,8 @@
           if (clickPasses >= maxPasses) {
             console.log('[Ali] expand cap reached at pass=' + clickPasses +
               ' (maxPasses=' + maxPasses + ')');
+            dlog('tab="' + debugName + '" DONE reason=budget-cap pagesOpened=' +
+              clickPasses + ' tabTotal=' + tabAdded);
             resolve();
             return;
           }
@@ -1062,6 +1101,8 @@
           var hits = findExpanders();
           if (hits.length === 0) {
             console.log('[Ali] no expander button — listing complete pass=' + clickPasses);
+            dlog('tab="' + debugName + '" DONE reason=no-more-button pagesOpened=' +
+              clickPasses + ' tabTotal=' + tabAdded);
             resolve();
             return;
           }
@@ -1069,6 +1110,8 @@
           console.log('[Ali] expand pass ' + clickPasses + '/' + maxPasses +
             ': clicking ' + hits.length + ' [' +
             hits.map(function (h) { return '"' + h.text + '" (' + h.source + ')'; }).join(', ') + ']');
+          dlog('tab="' + debugName + '" opening page ' + clickPasses + '/' + maxPasses +
+            ' (clicking ' + hits.length + ' expander(s))');
           for (var k = 0; k < hits.length; k++) {
             try {
               hits[k].el.scrollIntoView({ block: 'center' });
@@ -1090,18 +1133,32 @@
       function scrapeTab(matcher, debugName, maxPasses) {
         if (maxPasses <= 0) {
           console.log('[Ali] skipping "' + debugName + '" tab (budget=0)');
+          dlog('tab="' + debugName + '" SKIP budget=0');
           return Promise.resolve();
         }
+        var before = all.length;
+        dlog('tab="' + debugName + '" START budget=' + maxPasses +
+          ' grandTotalBefore=' + before);
         try { BRIDGE.onProgress('Loading "' + debugName + '" orders…'); } catch (_) {}
-        return clickTab(matcher, debugName)
-          .then(function () { return expandAndExtract(maxPasses); })
-          .then(function () {
+        return clickTab(matcher, debugName).then(function (matched) {
+          // No fallback: if the tab wasn't found we are still on the default
+          // "View all" view (the full order history). Scraping it here was the
+          // bug that imported 300+ orders — so skip the tab entirely instead.
+          if (!matched) {
+            console.log('[Ali] "' + debugName + '" tab not found — skipping (no fallback)');
+            dlog('tab="' + debugName + '" SKIP reason=not-found (no view-all fallback)');
+            return;
+          }
+          return expandAndExtract(maxPasses, debugName).then(function () {
             console.log('[Ali] "' + debugName + '" done, total=' + all.length);
+            dlog('tab="' + debugName + '" END tabContributed=' + (all.length - before) +
+              ' grandTotal=' + all.length);
           });
+        });
       }
-      return scrapeTab(isToShipLabel, 'To ship', CFG.toShipMaxPasses)
-        .then(function () { return scrapeTab(isShippedLabel, 'Shipped', CFG.shippedMaxPasses); })
-        .then(function () { return scrapeTab(isProcessedLabel, 'Processed', CFG.processedMaxPasses); })
+      return scrapeTab(isProcessingLabel, 'Processing', CFG.toShipMaxPasses)
+        .then(function () { return scrapeTab(isProcessedLabel, 'Processed', CFG.shippedMaxPasses); })
+        .then(function () { return scrapeTab(isCompletedLabel, 'Completed', CFG.processedMaxPasses); })
         .then(function () {
           if (all.length === 0) {
             console.log('[Ali] DOM listing empty — running diagnostic dump');
@@ -1116,6 +1173,7 @@
     }
 
     function finishListing() {
+      dlog('LISTING COMPLETE grandTotal=' + all.length + ' — handing off to per-order processing');
       try { BRIDGE.onTotal(all.length); } catch (_) {}
       return processNext(0);
     }

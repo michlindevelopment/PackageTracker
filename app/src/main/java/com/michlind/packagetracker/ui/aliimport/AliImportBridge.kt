@@ -1,5 +1,6 @@
 package com.michlind.packagetracker.ui.aliimport
 
+import android.util.Log
 import android.webkit.JavascriptInterface
 
 sealed interface AliImportEvent {
@@ -29,6 +30,13 @@ class AliImportBridge(private val sink: (AliImportEvent) -> Unit) {
 
     @JavascriptInterface
     fun getConfigOverrides(): String = configOverridesJson
+
+    // Diagnostic channel. The import script calls this at each tab/page
+    // boundary so the scrape volume shows up under a single greppable logcat
+    // tag (`adb logcat -s DTAG`) — separate from the noisy `[Ali]` console
+    // stream that lands under the BgAliImport tag.
+    @JavascriptInterface
+    fun dlog(message: String) { Log.d("DTAG", message) }
 
     @JavascriptInterface
     fun onProgress(message: String) { sink(AliImportEvent.Progress(message)) }
