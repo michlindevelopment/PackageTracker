@@ -65,8 +65,14 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Tab
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -89,6 +95,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -129,6 +136,9 @@ fun HomeScreen(
     val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
     val bgImportActive by viewModel.bgImportActive.collectAsStateWithLifecycle()
     val bgImportProgress by viewModel.bgImportProgress.collectAsStateWithLifecycle()
+    val aliDisconnected by viewModel.aliDisconnected.collectAsStateWithLifecycle()
+    val showDisconnectedDialog by viewModel.showDisconnectedDialog.collectAsStateWithLifecycle()
+    val showChangelog by viewModel.showChangelog.collectAsStateWithLifecycle()
     var sortMenuOpen by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -226,6 +236,38 @@ fun HomeScreen(
             dismissButton = {
                 TextButton(onClick = { viewModel.dismissUpdate() }) {
                     Text("Will do it later")
+                }
+            }
+        )
+    }
+
+    // "What's New" full-screen popup, shown once after a version change.
+    if (showChangelog && viewModel.changelogItems.isNotEmpty()) {
+        WhatsNewDialog(
+            version = viewModel.changelogVersion,
+            items = viewModel.changelogItems,
+            onDismiss = { viewModel.dismissChangelog() }
+        )
+    }
+
+    // Disconnected-from-AliExpress popup. Shown on cold launch (and after a
+    // failed sync) when the session has expired and the user had connected
+    // before. Connect routes to the sign-in flow; Dismiss hides it for this
+    // session (the sync option stays hidden until reconnected).
+    if (showDisconnectedDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissAliDisconnected() },
+            title = { Text("Disconnected from AliExpress") },
+            text = { Text("Your AliExpress session has expired. Reconnect to sync your orders.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissAliDisconnected()
+                    onSignInToAliExpress()
+                }) { Text("Connect") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissAliDisconnected() }) {
+                    Text("Dismiss")
                 }
             }
         )
@@ -416,31 +458,37 @@ fun HomeScreen(
                 BottomSheetActionRow(
                     icon = Icons.Default.Sync,
                     title = "Sync tracking status",
-                    subtitle = "Update delivery progress for tracked packages",
+                    subtitle = "Only updates tracking",
                     onClick = {
                         showRefreshOptions = false
                         viewModel.syncStatus()
                     }
                 )
-                BottomSheetActionRow(
-                    icon = Icons.Default.Bolt,
-                    title = "Quick",
-                    subtitle = "Pull new AliExpress orders",
-                    onClick = {
-                        showRefreshOptions = false
-                        viewModel.quickFetchThenSyncStatus()
-                    }
-                )
-                BottomSheetActionRow(
-                    icon = Icons.Default.CloudSync,
-                    title = "Full",
-                    subtitle = "Re-scan every order — catches tracking numbers " +
-                        "that AliExpress changed after shipping",
-                    onClick = {
-                        showRefreshOptions = false
-                        viewModel.fullFetchThenSyncStatus()
-                    }
-                )
+                // Quick option hidden for now — kept here (not deleted) so it
+                // can be re-enabled later without rewiring the sheet.
+                // BottomSheetActionRow(
+                //     icon = Icons.Default.Bolt,
+                //     title = "Quick",
+                //     subtitle = "Pull new AliExpress orders",
+                //     onClick = {
+                //         showRefreshOptions = false
+                //         viewModel.quickFetchThenSyncStatus()
+                //     }
+                // )
+                // Hidden while disconnected from AliExpress — there's no session
+                // to sync with. The reconnect prompt (or the FAB "Sign in")
+                // is the path back.
+                if (!aliDisconnected) {
+                    BottomSheetActionRow(
+                        icon = Icons.Default.CloudSync,
+                        title = "Sync packages from AliExpress",
+                        subtitle = "Import orders and update tracking",
+                        onClick = {
+                            showRefreshOptions = false
+                            viewModel.fullFetchThenSyncStatus()
+                        }
+                    )
+                }
             }
         }
     }
@@ -943,6 +991,107 @@ private fun BottomSheetActionRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
             )
+        }
+    }
+}
+
+// Full-screen "What's New" popup shown once after an app update. Lists the
+// changelog bullets for the installed version with a single dismiss button.
+// Badge palette per change kind. Text colour on a matching low-alpha fill so
+// each badge reads clearly in both light and dark themes.
+private fun changeBadgeColor(kind: com.michlind.packagetracker.ui.changelog.Changelog.Kind): Color =
+    when (kind) {
+        com.michlind.packagetracker.ui.changelog.Changelog.Kind.NEW -> Color(0xFF1B9E4B)
+        com.michlind.packagetracker.ui.changelog.Changelog.Kind.IMPROVEMENT -> Color(0xFF2F6FED)
+        com.michlind.packagetracker.ui.changelog.Changelog.Kind.BUGFIX -> Color(0xFFE8710A)
+    }
+
+@Composable
+private fun ChangeBadge(kind: com.michlind.packagetracker.ui.changelog.Changelog.Kind) {
+    val color = changeBadgeColor(kind)
+    // Fixed width + centered label so every row's text starts at the same x,
+    // regardless of the label ("New" vs "Imp" vs "Fix").
+    Box(
+        modifier = Modifier
+            .width(52.dp)
+            .background(color.copy(alpha = 0.16f), RoundedCornerShape(6.dp))
+            .padding(vertical = 3.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = kind.label,
+            color = color,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.labelSmall
+        )
+    }
+}
+
+@Composable
+private fun WhatsNewDialog(
+    version: String,
+    items: List<com.michlind.packagetracker.ui.changelog.Changelog.Item>,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+                Spacer(Modifier.height(40.dp))
+                Text(
+                    text = "What's New",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Version $version",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(28.dp))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    items.forEach { item ->
+                        Row(
+                            modifier = Modifier.padding(bottom = 20.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            ChangeBadge(item.kind)
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = item.text,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(
+                        text = "Got it",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
     }
 }

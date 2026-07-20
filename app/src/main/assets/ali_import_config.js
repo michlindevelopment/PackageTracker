@@ -27,7 +27,14 @@ window.__AliImportConfig = {
   // /p/tracking/index.html page — we load that URL into a hidden same-origin
   // iframe per order, wait for [class*="mailNoValue"] to render, and read it.
   domTrackingEnabled: true,
+  // How many tracking-page iframes to load at once. Each concurrent lookup
+  // gets its own hidden iframe. 1 = old sequential behavior; 4 overlaps four
+  // ~2-3s page loads so total tracking time drops roughly proportionally.
+  trackingConcurrency: 4,
   iframeHardTimeoutMs: 12000,
+  // Poll interval for reading the tracking number. We poll from the moment the
+  // iframe src is set (not just on `onload`), so the number is picked up as
+  // soon as it renders instead of waiting for trackers/analytics to finish.
   iframePollIntervalMs: 250,
   iframePollMaxTries: 40,
   // Legacy hover scrape — kept off by default; enable only if iframe path fails.

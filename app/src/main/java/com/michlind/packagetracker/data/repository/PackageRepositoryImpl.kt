@@ -162,14 +162,17 @@ class PackageRepositoryImpl @Inject constructor(
 
             // Cainiao sometimes prepends advisory entries (e.g. an
             // Advance Shipping Notice from the destination courier) that don't
-            // reflect actual package movement. Skip those when picking the
-            // latest meaningful action code so a forecast doesn't get treated
-            // as the real state.
-            val latestActionCode = events.firstOrNull {
-                it.actionCode.isNotBlank() && it.actionCode !in ADVISORY_ACTION_CODES
-            }?.actionCode
-            val status = StatusMapper.map(
-                actionCode = latestActionCode,
+            // reflect actual package movement. Drop those so a forecast is
+            // neither treated as the latest state nor counted as a milestone.
+            // `events` is newest-first, so this list is too.
+            val meaningfulCodes = events
+                .map { it.actionCode }
+                .filter { it.isNotBlank() && it !in ADVISORY_ACTION_CODES }
+            // Customs-anchored: resolves ambiguous line-haul scans by which
+            // customs milestones have already happened, so the status never
+            // jumps backward to "In Transit" after clearing import customs.
+            val status = StatusMapper.mapFromHistory(
+                actionCodes = meaningfulCodes,
                 progressRate = data.processInfo?.progressRate
             )
 
@@ -225,6 +228,8 @@ class PackageRepositoryImpl @Inject constructor(
             .map { it.removePrefix("ali:") }
             .filter { it.isNotBlank() }
             .toSet()
+
+    override suspend fun hasAnyAliOrders(): Boolean = dao.countAliPackages() > 0
 
     override suspend fun getBlankTrackingPackageIds(): List<Long> =
         dao.getBlankTrackingPackageIds()

@@ -125,7 +125,7 @@ import com.michlind.packagetracker.ui.components.colorAndIcon
 import com.michlind.packagetracker.util.DateUtils
 
 private val STAGE_LABELS = listOf(
-    "Order\nPlaced", "Shipped", "Export\nCustoms", "In Transit", "Import\nCustoms", "Delivery", "Delivered"
+    "Order\nPlaced", "Shipped", "Export\nCustoms", "In Flight", "Import\nCustoms", "Delivery", "Delivered"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

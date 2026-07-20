@@ -1,5 +1,6 @@
 package com.michlind.packagetracker.ui.aliimport
 
+import android.os.SystemClock
 import android.util.Log
 import android.webkit.JavascriptInterface
 
@@ -25,6 +26,23 @@ class AliImportBridge(private val sink: (AliImportEvent) -> Unit) {
     @Volatile
     var configOverridesJson: String = "{}"
 
+    // Wall-clock t0 (SystemClock.elapsedRealtime) for the entire import, set by
+    // the host WebView at mount — i.e. BEFORE the orders page even loads. The
+    // terminal events log elapsed time under DTAG, so the true end-to-end cost
+    // (page load + redirects + JS) is greppable next to the JS-side IMPORT
+    // SUMMARY, which can only start counting once the script is injected.
+    @Volatile
+    var importStartRealtimeMs: Long = 0L
+
+    private fun logWallClock(outcome: String) {
+        val start = importStartRealtimeMs
+        if (start <= 0L) return
+        val elapsedMs = SystemClock.elapsedRealtime() - start
+        val fmt = if (elapsedMs < 1000) "${elapsedMs}ms"
+        else String.format("%.1fs", elapsedMs / 1000.0)
+        Log.d("DTAG", "IMPORT WALL-CLOCK $outcome elapsed=$fmt")
+    }
+
     @JavascriptInterface
     fun getKnownOrderIds(): String = knownOrderIdsJson
 
@@ -33,8 +51,9 @@ class AliImportBridge(private val sink: (AliImportEvent) -> Unit) {
 
     // Diagnostic channel. The import script calls this at each tab/page
     // boundary so the scrape volume shows up under a single greppable logcat
-    // tag (`adb logcat -s DTAG`) — separate from the noisy `[Ali]` console
-    // stream that lands under the BgAliImport tag.
+    // tag (`adb logcat -s DTAG`). The host WebView also routes its own logs
+    // (page loads, load errors, the `[Ali]` JS console stream) under DTAG, so
+    // one `adb logcat -s DTAG` captures the entire import.
     @JavascriptInterface
     fun dlog(message: String) { Log.d("DTAG", message) }
 
@@ -48,8 +67,14 @@ class AliImportBridge(private val sink: (AliImportEvent) -> Unit) {
     fun onOrder(json: String, index: Int, total: Int) { sink(AliImportEvent.Order(json, index, total)) }
 
     @JavascriptInterface
-    fun onComplete() { sink(AliImportEvent.Complete) }
+    fun onComplete() {
+        logWallClock("COMPLETE")
+        sink(AliImportEvent.Complete)
+    }
 
     @JavascriptInterface
-    fun onError(message: String) { sink(AliImportEvent.Error(message)) }
+    fun onError(message: String) {
+        logWallClock("ERROR($message)")
+        sink(AliImportEvent.Error(message))
+    }
 }

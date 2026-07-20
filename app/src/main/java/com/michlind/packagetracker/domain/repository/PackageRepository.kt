@@ -62,6 +62,10 @@ interface PackageRepository {
      */
     suspend fun getImportedAliOrderIdsWithTracking(): Set<String>
 
+    /** True if any AliExpress-imported package exists — i.e. the user has
+     *  connected to AliExpress at least once in the past. */
+    suspend fun hasAnyAliOrders(): Boolean
+
     /**
      * IDs of non-received packages whose tracking number is blank. Used to
      * snapshot which packages had no tracking before a background AliExpress

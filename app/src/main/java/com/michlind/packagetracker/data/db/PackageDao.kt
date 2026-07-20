@@ -51,6 +51,9 @@ interface PackageDao {
     @Query("SELECT externalOrderId FROM packages WHERE externalOrderId LIKE 'ali:%' AND trackingNumber != ''")
     suspend fun getAliExternalOrderIdsWithTracking(): List<String>
 
+    @Query("SELECT COUNT(*) FROM packages WHERE externalOrderId LIKE 'ali:%'")
+    suspend fun countAliPackages(): Int
+
     @Query("SELECT id FROM packages WHERE trackingNumber = '' AND isReceived = 0")
     suspend fun getBlankTrackingPackageIds(): List<Long>
 

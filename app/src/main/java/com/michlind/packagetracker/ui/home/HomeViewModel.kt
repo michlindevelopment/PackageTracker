@@ -1,6 +1,10 @@
 package com.michlind.packagetracker.ui.home
 
+import android.webkit.CookieManager
 import androidx.lifecycle.DefaultLifecycleObserver
+import com.michlind.packagetracker.BuildConfig
+import com.michlind.packagetracker.data.preferences.ChangelogPreferenceRepository
+import com.michlind.packagetracker.ui.changelog.Changelog
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
@@ -167,6 +171,7 @@ class HomeViewModel @Inject constructor(
     private val repository: PackageRepository,
     private val importOrder: ImportAliOrderUseCase,
     private val importPrefs: AliImportPreferenceRepository,
+    private val changelogPrefs: ChangelogPreferenceRepository,
     private val syncOnResumePrefs: SyncOnResumePreferenceRepository,
     private val checkForUpdate: CheckForUpdateUseCase,
     private val smsRepository: SmsRepository,
@@ -238,6 +243,75 @@ class HomeViewModel @Inject constructor(
     private val _bgImportProgress = MutableStateFlow<BgImportProgress?>(null)
     val bgImportProgress: StateFlow<BgImportProgress?> = _bgImportProgress.asStateFlow()
 
+    // Persisted "AliExpress session is gone" state. Initialised from prefs so
+    // it's correct on cold launch before any network work. Drives hiding the
+    // "Sync packages from AliExpress" option in the Refresh sheet.
+    private val _aliDisconnected = MutableStateFlow(importPrefs.aliDisconnected)
+    val aliDisconnected: StateFlow<Boolean> = _aliDisconnected.asStateFlow()
+
+    // Controls the reconnect dialog. Visible when disconnected AND not already
+    // dismissed for this disconnected episode. "Dismiss" persists, so it stays
+    // gone across launches; only reconnecting resets it (so a fresh
+    // disconnection later prompts again). The sync option stays hidden either
+    // way while disconnected.
+    private val _showDisconnectedDialog = MutableStateFlow(
+        importPrefs.aliDisconnected && !importPrefs.disconnectDialogDismissed
+    )
+    val showDisconnectedDialog: StateFlow<Boolean> = _showDisconnectedDialog.asStateFlow()
+
+    fun dismissAliDisconnected() {
+        importPrefs.disconnectDialogDismissed = true
+        _showDisconnectedDialog.value = false
+    }
+
+    // "What's New" full-screen popup, shown once whenever the version changes
+    // (see the version check in init). Content is version-agnostic; the header
+    // shows the installed version name.
+    val changelogVersion: String = BuildConfig.VERSION_NAME
+    val changelogItems: List<Changelog.Item> = Changelog.ITEMS
+    private val _showChangelog = MutableStateFlow(false)
+    val showChangelog: StateFlow<Boolean> = _showChangelog.asStateFlow()
+
+    fun dismissChangelog() { _showChangelog.value = false }
+
+    private fun setDisconnected(disconnected: Boolean) {
+        importPrefs.aliDisconnected = disconnected
+        _aliDisconnected.value = disconnected
+        if (disconnected) {
+            // Show the dialog unless the user already dismissed it this episode.
+            _showDisconnectedDialog.value = !importPrefs.disconnectDialogDismissed
+        } else {
+            // Reconnected — clear the dismissal so the next disconnection nags.
+            importPrefs.disconnectDialogDismissed = false
+            _showDisconnectedDialog.value = false
+        }
+    }
+
+    // True if the user has ever connected — either the sticky flag or existing
+    // AliExpress-imported packages (covers users upgrading past this build).
+    private suspend fun hasEverConnected(): Boolean =
+        importPrefs.hasConnectedBefore ||
+            withContext(Dispatchers.IO) {
+                runCatching { repository.hasAnyAliOrders() }.getOrDefault(false)
+            }
+
+    // Cold-launch connection probe. Reads the AliExpress session cookie
+    // (`sign=y`, the same signal BgAliImportWebView trusts) WITHOUT loading a
+    // page, so a disconnected session is known immediately. Only flags users
+    // who connected before; on any error we assume connected so we never
+    // false-alarm.
+    private fun checkAliConnectionOnLaunch() = viewModelScope.launch {
+        if (!hasEverConnected()) return@launch
+        // Read the cookie on the main thread — getInstance() may lazily spin up
+        // the WebView provider, which prefers the main thread on cold launch.
+        val hasSession = runCatching {
+            CookieManager.getInstance()
+                .getCookie("https://www.aliexpress.com")
+                ?.contains("sign=y") == true
+        }.getOrDefault(true)
+        setDisconnected(!hasSession)
+    }
+
     private val bgEventChannel = Channel<AliImportEvent>(Channel.UNLIMITED)
     val bgBridge = AliImportBridge { event -> bgEventChannel.trySend(event) }
 
@@ -273,6 +347,24 @@ class HomeViewModel @Inject constructor(
 
     init {
         ProcessLifecycleOwner.get().lifecycle.addObserver(processLifecycleObserver)
+
+        // Detect a lost AliExpress session on cold launch (cookie-only, no
+        // network) so the reconnect prompt shows immediately and the sync
+        // option hides.
+        checkAliConnectionOnLaunch()
+
+        // "What's New" after a version change: show once whenever the
+        // installed versionCode differs from the last one we launched. Skipped
+        // on a fresh install (last == 0). Record the current version
+        // immediately so it only shows once per version.
+        run {
+            val current = BuildConfig.VERSION_CODE
+            val last = changelogPrefs.lastSeenVersionCode
+            if (last != 0 && current != last) {
+                _showChangelog.value = true
+            }
+            changelogPrefs.lastSeenVersionCode = current
+        }
 
         // One-shot update check on cold start. Failures are silent — we'd
         // rather not nag the user with a network-error snackbar just because
@@ -592,6 +684,27 @@ class HomeViewModel @Inject constructor(
                 _bgImportActive.value = false
                 bgImportOutcome = null
                 _bgImportProgress.value = null
+
+                // Connection bookkeeping. A Completed import means we reached
+                // the order list → the user is connected; remember it. A
+                // Skipped outcome means AliExpress bounced us to the login page
+                // (session gone). Only prompt to reconnect if the user had
+                // connected before — either via the persisted flag or because
+                // they already have AliExpress-imported packages on file (so
+                // existing users upgrading past this build still get prompted).
+                when (outcome) {
+                    BgImportOutcome.Completed -> {
+                        importPrefs.hasConnectedBefore = true
+                        if (_aliDisconnected.value) setDisconnected(false)
+                    }
+                    BgImportOutcome.Skipped -> {
+                        if (hasEverConnected()) {
+                            importPrefs.hasConnectedBefore = true
+                            setDisconnected(true)
+                        }
+                    }
+                    BgImportOutcome.Aborted -> Unit
+                }
 
                 // Phase 4 — only if the import actually completed AND the
                 // caller asked for the targeted refresh: refresh each

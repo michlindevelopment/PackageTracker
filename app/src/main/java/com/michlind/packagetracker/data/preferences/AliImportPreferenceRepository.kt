@@ -43,6 +43,37 @@ class AliImportPreferenceRepository @Inject constructor(
     fun setShippedPages(value: Int) = saveAndPublish(KEY_SHIPPED, value, _shippedPages)
     fun setProcessedPages(value: Int) = saveAndPublish(KEY_PROCESSED, value, _processedPages)
 
+    /**
+     * True once the user has successfully connected to AliExpress at least
+     * once (a background import that actually reached the order list). Used to
+     * decide whether a later "no session" outcome should surface the
+     * "Disconnected from AliExpress" prompt — we only nag users who were
+     * connected before, never ones who never signed in.
+     */
+    var hasConnectedBefore: Boolean
+        get() = prefs.getBoolean(KEY_CONNECTED, false)
+        set(value) { prefs.edit { putBoolean(KEY_CONNECTED, value) } }
+
+    /**
+     * True when we believe the AliExpress session is gone (last known state).
+     * Persisted so the home screen knows on cold launch — before any network
+     * work — to show the reconnect prompt and hide the "Sync packages from
+     * AliExpress" option. Cleared once a sync succeeds again.
+     */
+    var aliDisconnected: Boolean
+        get() = prefs.getBoolean(KEY_DISCONNECTED, false)
+        set(value) { prefs.edit { putBoolean(KEY_DISCONNECTED, value) } }
+
+    /**
+     * True once the user has dismissed the reconnect dialog for the CURRENT
+     * disconnected episode. Persisted so "Dismiss" sticks across launches (the
+     * dialog won't nag again). Reset when the session reconnects, so a fresh
+     * disconnection later still prompts.
+     */
+    var disconnectDialogDismissed: Boolean
+        get() = prefs.getBoolean(KEY_DISCONNECT_DISMISSED, false)
+        set(value) { prefs.edit { putBoolean(KEY_DISCONNECT_DISMISSED, value) } }
+
     private fun saveAndPublish(key: String, raw: Int, flow: MutableStateFlow<Int>) {
         val clamped = raw.coerceIn(0, MAX_PAGES)
         prefs.edit { putInt(key, clamped) }
@@ -57,6 +88,9 @@ class AliImportPreferenceRepository @Inject constructor(
         const val KEY_TO_SHIP = "ali_pages_to_ship"
         const val KEY_SHIPPED = "ali_pages_shipped"
         const val KEY_PROCESSED = "ali_pages_processed"
+        const val KEY_CONNECTED = "ali_has_connected"
+        const val KEY_DISCONNECTED = "ali_disconnected"
+        const val KEY_DISCONNECT_DISMISSED = "ali_disconnect_dismissed"
         const val DEFAULT_TO_SHIP = 20
         const val DEFAULT_SHIPPED = 20
         const val DEFAULT_PROCESSED = 1

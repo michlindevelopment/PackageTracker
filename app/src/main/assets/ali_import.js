@@ -93,6 +93,7 @@
     mtopWaitIntervalMs: 200,
     mtopWaitMaxTries: 50,
     domTrackingEnabled: true,
+    trackingConcurrency: 4,
     iframeHardTimeoutMs: 12000,
     iframePollIntervalMs: 250,
     iframePollMaxTries: 40,
@@ -143,6 +144,40 @@
   }
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  // High-resolution monotonic clock for timing spans. performance.now() is
+  // immune to wall-clock adjustments; falls back to Date.now() on the off
+  // chance the WebView doesn't expose it. Returns whole milliseconds.
+  function now() {
+    try {
+      if (window.performance && window.performance.now) {
+        return Math.round(window.performance.now());
+      }
+    } catch (_) {}
+    return Date.now();
+  }
+  function fmtMs(ms) {
+    if (ms < 1000) return ms + 'ms';
+    return (ms / 1000).toFixed(1) + 's';
+  }
+
+  // Import-wide timing accumulators, dumped in the final IMPORT SUMMARY line.
+  // Answers "where did the wall-clock go?" without needing a profiler attached.
+  var TIMING = {
+    startedAt: now(),
+    listingMs: 0,
+    processingMs: 0,
+    // Per-order tracking-lookup outcomes + the time each category cost.
+    orders: 0,
+    skipped: 0,          // pre-shipment / delivered / already-known
+    iframeHit: 0,        // tracking number read from the hidden iframe
+    iframeMiss: 0,       // iframe returned null (timeout or empty)
+    fallbackHit: 0,      // detail API found it after iframe miss
+    fallbackMiss: 0,     // neither path found a tracking number
+    trackingLookupMs: 0, // total ms spent inside tracking lookups
+    slowestOrderMs: 0,
+    slowestOrderId: ''
+  };
 
   // Click any visible "view orders" / "view more" / "load more" button until stable.
   // AliExpress collapses long order lists behind these — without expanding them
@@ -892,9 +927,11 @@
   // iframe and wait for the tracking number element to render. The element's
   // class has a build hash (e.g. logistic-info-v2--mailNoValue--X0fPzen) so we
   // match by substring `[class*="mailNoValue"]`.
-  function getTrackingViaIframe(orderId) {
+  // `slot` selects which hidden iframe to reuse. Each concurrent worker owns a
+  // distinct iframe so parallel lookups don't clobber each other's document.
+  function getTrackingViaIframe(orderId, slot) {
     return new Promise(function (resolve) {
-      var IFRAME_ID = '__aliTrackerFrame';
+      var IFRAME_ID = '__aliTrackerFrame' + (slot != null ? '_' + slot : '');
       var iframe = document.getElementById(IFRAME_ID);
       if (!iframe) {
         iframe = document.createElement('iframe');
@@ -906,6 +943,9 @@
 
       var resolved = false;
       var pollTimer = null;
+      var startedAt = now();
+      var onloadAt = 0;
+
       var hardTimer = setTimeout(function () {
         if (resolved) return;
         resolved = true;
@@ -917,9 +957,21 @@
       function tryRead(label) {
         if (resolved) return false;
         try {
-          var doc = iframe.contentDocument ||
-            (iframe.contentWindow && iframe.contentWindow.document);
+          var win = iframe.contentWindow;
+          var doc = iframe.contentDocument || (win && win.document);
           if (!doc) return false;
+          // Stale-read guard: because we poll from the moment src is set (and
+          // reuse this iframe across orders), the OLD order's page may linger
+          // for a few hundred ms mid-navigation. Reject ONLY when we can see a
+          // different order's tracking id still in the URL. Blank/unreadable
+          // hrefs fall through and are allowed, so we never regress to a
+          // timeout just because location wasn't legible yet.
+          try {
+            var href = (win && win.location && win.location.href) || '';
+            if (href && /tradeOrderId=\d+/.test(href) && href.indexOf(orderId) === -1) {
+              return false;
+            }
+          } catch (_) { /* cross-origin transient — allow the read attempt */ }
           var el = doc.querySelector('[class*="mailNoValue"]');
           if (el) {
             var tn = (el.innerText || el.textContent || '').trim();
@@ -927,40 +979,52 @@
               resolved = true;
               clearTimeout(hardTimer);
               if (pollTimer) clearTimeout(pollTimer);
-              console.log('[Ali] iframe order=' + orderId + ' tn=' + tn + ' via=' + label);
+              console.log('[Ali] iframe order=' + orderId + ' tn=' + tn +
+                ' via=' + label + ' t=' + (now() - startedAt) + 'ms' +
+                (onloadAt ? ' onload@' + (onloadAt - startedAt) + 'ms' : ' pre-onload'));
               resolve(tn);
               return true;
             }
           }
         } catch (e) {
-          console.log('[Ali] iframe read err order=' + orderId + ': ' + (e && e.message));
+          // Cross-origin/transient during navigation is expected — stay quiet.
         }
         return false;
       }
 
+      // onload is now just one more read trigger, not the gate. The tracking
+      // number typically renders well before onload fires (onload blocks on
+      // analytics/tracker scripts we don't need), so polling from src-set below
+      // catches it early.
       iframe.onload = function () {
-        if (tryRead('onload')) return;
-        var tries = 0;
-        (function poll() {
-          if (resolved) return;
-          tries++;
-          if (tryRead('poll-' + tries)) return;
-          if (tries >= CFG.iframePollMaxTries) {
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(hardTimer);
-              console.log('[Ali] iframe order=' + orderId + ' tn=<null> tries=' + tries);
-              resolve(null);
-            }
-            return;
-          }
-          pollTimer = setTimeout(poll, CFG.iframePollIntervalMs);
-        })();
+        onloadAt = now();
+        tryRead('onload');
       };
+
+      var tries = 0;
+      function poll() {
+        if (resolved) return;
+        tries++;
+        if (tryRead('poll-' + tries)) return;
+        if (tries >= CFG.iframePollMaxTries) {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(hardTimer);
+            console.log('[Ali] iframe order=' + orderId + ' tn=<null> tries=' + tries);
+            resolve(null);
+          }
+          return;
+        }
+        pollTimer = setTimeout(poll, CFG.iframePollIntervalMs);
+      }
 
       var url = '/p/tracking/index.html?tradeOrderId=' + encodeURIComponent(orderId) +
         '&_addShare=no&_login=yes';
-      try { iframe.src = url; }
+      try {
+        iframe.src = url;
+        // Start polling immediately — do NOT wait for onload.
+        pollTimer = setTimeout(poll, CFG.iframePollIntervalMs);
+      }
       catch (e) {
         if (!resolved) {
           resolved = true;
@@ -1028,6 +1092,8 @@
   function importAll() {
     var page = 1;
     var all = [];
+    var listingStart = now();
+    var processingStart = 0;
 
     var seenIds = Object.create(null);
 
@@ -1137,6 +1203,7 @@
           return Promise.resolve();
         }
         var before = all.length;
+        var tabStart = now();
         dlog('tab="' + debugName + '" START budget=' + maxPasses +
           ' grandTotalBefore=' + before);
         try { BRIDGE.onProgress('Loading "' + debugName + '" orders…'); } catch (_) {}
@@ -1146,13 +1213,16 @@
           // bug that imported 300+ orders — so skip the tab entirely instead.
           if (!matched) {
             console.log('[Ali] "' + debugName + '" tab not found — skipping (no fallback)');
-            dlog('tab="' + debugName + '" SKIP reason=not-found (no view-all fallback)');
+            dlog('tab="' + debugName + '" SKIP reason=not-found (no view-all fallback) elapsed=' +
+              fmtMs(now() - tabStart));
             return;
           }
           return expandAndExtract(maxPasses, debugName).then(function () {
-            console.log('[Ali] "' + debugName + '" done, total=' + all.length);
+            var tabMs = now() - tabStart;
+            console.log('[Ali] "' + debugName + '" done, total=' + all.length +
+              ' in ' + fmtMs(tabMs));
             dlog('tab="' + debugName + '" END tabContributed=' + (all.length - before) +
-              ' grandTotal=' + all.length);
+              ' grandTotal=' + all.length + ' elapsed=' + fmtMs(tabMs));
           });
         });
       }
@@ -1173,34 +1243,72 @@
     }
 
     function finishListing() {
-      dlog('LISTING COMPLETE grandTotal=' + all.length + ' — handing off to per-order processing');
+      TIMING.listingMs = now() - listingStart;
+      processingStart = now();
+      dlog('LISTING COMPLETE grandTotal=' + all.length + ' listingElapsed=' +
+        fmtMs(TIMING.listingMs) + ' — handing off to per-order processing');
       try { BRIDGE.onTotal(all.length); } catch (_) {}
-      return processNext(0);
+      return processAll();
     }
 
-    function processNext(i) {
-      if (i >= all.length) {
-        try { BRIDGE.onComplete(); } catch (_) {}
-        return;
+    function finalizeProcessing() {
+      TIMING.processingMs = processingStart ? (now() - processingStart) : 0;
+      logImportSummary();
+      try { BRIDGE.onComplete(); } catch (_) {}
+    }
+
+    // Process all orders through a fixed pool of `trackingConcurrency` workers.
+    // Each worker owns one hidden iframe (its `slot`) and pulls the next order
+    // off the shared cursor as soon as it finishes the previous one, so N
+    // tracking-page loads are in flight at once instead of strictly one.
+    function processAll() {
+      if (all.length === 0) { finalizeProcessing(); return; }
+      var workers = Math.max(1, CFG.trackingConcurrency | 0);
+      workers = Math.min(workers, all.length);
+      var nextIndex = 0;
+      var completed = 0;
+      console.log('[Ali] processing ' + all.length + ' orders with concurrency=' + workers);
+      dlog('PROCESSING START orders=' + all.length + ' concurrency=' + workers);
+
+      function pump(slot) {
+        if (nextIndex >= all.length) return;
+        var i = nextIndex++;   // synchronous claim — no two workers get the same i
+        processOne(i, slot).then(function () {
+          completed++;
+          if (completed >= all.length) { finalizeProcessing(); return; }
+          pump(slot);
+        });
       }
+      for (var s = 0; s < workers; s++) pump(s);
+    }
+
+    function processOne(i, slot) {
       var o = all[i];
       var alreadyKnown = !!KNOWN_ORDER_IDS[o.orderId];
       var skipTracking = isNotYetShipped(o.statusText) || isReceivedStatus(o.statusText) || alreadyKnown;
+      TIMING.orders++;
       console.log('[Ali] order ' + (i + 1) + '/' + all.length +
         ' id=' + o.orderId + ' name="' + (o.name || '').slice(0, 40) +
         '" cardStatus="' + (o.statusText || '') +
         '" skipTracking=' + skipTracking +
-        ' alreadyKnown=' + alreadyKnown);
+        ' alreadyKnown=' + alreadyKnown + ' slot=' + slot);
 
       // Primary path: load /p/tracking/index.html in a hidden iframe and read
       // the tracking number from `[class*="mailNoValue"]`. Skip the lookup for
       // pre-shipment & post-delivery orders — they don't carry a useful tn.
+      //
+      // `outcome` records which branch resolved the tracking number so the
+      // final summary can attribute where time went across the concurrent pool.
+      var lookupStart = now();
       var trackingPromise;
+      var outcome = 'skipped';
       if (skipTracking || !CFG.domTrackingEnabled) {
+        TIMING.skipped++;
         trackingPromise = Promise.resolve(null);
       } else {
-        trackingPromise = getTrackingViaIframe(o.orderId).then(function (tn) {
-          if (tn) return tn;
+        trackingPromise = getTrackingViaIframe(o.orderId, slot).then(function (tn) {
+          if (tn) { outcome = 'iframeHit'; return tn; }
+          outcome = 'iframeMiss';
           return fetchDetail(o.orderId)
             .then(function (res) { return extractTrackingNumber(res, o.orderId); })
             .catch(function () { return null; });
@@ -1212,6 +1320,26 @@
           (err && (err.msg || err.message) || err));
         return null;
       }).then(function (tn) {
+        // Tally the outcome + timing. Only non-skipped orders cost real time.
+        // NOTE: with concurrency>1 these per-lookup durations overlap in wall
+        // time, so trackingLookupTotal is cumulative work, not elapsed.
+        if (outcome !== 'skipped') {
+          var lookupMs = now() - lookupStart;
+          TIMING.trackingLookupMs += lookupMs;
+          if (lookupMs > TIMING.slowestOrderMs) {
+            TIMING.slowestOrderMs = lookupMs;
+            TIMING.slowestOrderId = o.orderId;
+          }
+          if (outcome === 'iframeHit') {
+            TIMING.iframeHit++;
+          } else {
+            TIMING.iframeMiss++;
+            if (tn) TIMING.fallbackHit++; else TIMING.fallbackMiss++;
+          }
+          dlog('order ' + (i + 1) + '/' + all.length + ' id=' + o.orderId +
+            ' outcome=' + (tn ? outcome : outcome + '+fallbackMiss') +
+            ' tn=' + (tn ? 'yes' : 'no') + ' lookup=' + fmtMs(lookupMs));
+        }
         var payload = {
           orderId: o.orderId,
           name: o.name,
@@ -1221,8 +1349,37 @@
           statusText: o.statusText || ''
         };
         try { BRIDGE.onOrder(JSON.stringify(payload), i + 1, all.length); } catch (_) {}
-        return sleep(CFG.detailFetchDelayMs).then(function () { return processNext(i + 1); });
       });
+    }
+
+    // Single greppable line (adb logcat -s DTAG) that explains where the
+    // import's wall-clock went. Per-lookup durations overlap when
+    // trackingConcurrency>1, so compare `processing` (elapsed) against
+    // `trackingLookupTotal` (cumulative) to see how much the pool saved.
+    function logImportSummary() {
+      var totalMs = now() - TIMING.startedAt;
+      var lookups = TIMING.iframeHit + TIMING.iframeMiss;
+      var avgLookup = lookups ? Math.round(TIMING.trackingLookupMs / lookups) : 0;
+      dlog('IMPORT SUMMARY total=' + fmtMs(totalMs) +
+        ' listing=' + fmtMs(TIMING.listingMs) +
+        ' processing=' + fmtMs(TIMING.processingMs) +
+        ' concurrency=' + (CFG.trackingConcurrency | 0) +
+        ' | orders=' + TIMING.orders +
+        ' skipped=' + TIMING.skipped +
+        ' lookups=' + lookups +
+        ' (iframeHit=' + TIMING.iframeHit +
+        ' iframeMiss=' + TIMING.iframeMiss +
+        ' → fallbackHit=' + TIMING.fallbackHit +
+        ' fallbackMiss=' + TIMING.fallbackMiss + ')' +
+        ' | trackingLookupTotal=' + fmtMs(TIMING.trackingLookupMs) +
+        ' avgLookup=' + fmtMs(avgLookup) +
+        ' slowest=' + fmtMs(TIMING.slowestOrderMs) +
+        ' (order ' + (TIMING.slowestOrderId || 'n/a') + ')');
+      console.log('[Ali] IMPORT SUMMARY total=' + fmtMs(totalMs) +
+        ' listing=' + fmtMs(TIMING.listingMs) +
+        ' processing=' + fmtMs(TIMING.processingMs) +
+        ' orders=' + TIMING.orders + ' skipped=' + TIMING.skipped +
+        ' iframeMiss=' + TIMING.iframeMiss + ' avgLookup=' + fmtMs(avgLookup));
     }
 
     startListing().catch(function (err) {

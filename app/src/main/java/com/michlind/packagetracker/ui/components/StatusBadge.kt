@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ArrowCircleDown
 import androidx.compose.material.icons.filled.ArrowCircleUp
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.FlightLand
 import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material.icons.filled.GppBad
 import androidx.compose.material.icons.filled.Help
@@ -166,9 +167,11 @@ fun PackageStatus.colorAndIcon(): Pair<Color, ImageVector> = when (this) {
     PackageStatus.ORDER_PLACED     -> StatusOrderPlaced    to Icons.Default.ShoppingBag
     PackageStatus.SHIPPED          -> StatusShipped        to Icons.Default.LocalPostOffice
     PackageStatus.IN_TRANSIT       -> StatusInTransit      to Icons.Default.FlightTakeoff
+    PackageStatus.IN_FLIGHT        -> StatusInTransit      to Icons.Default.FlightTakeoff
     PackageStatus.CUSTOMS_EXPORT   -> StatusCustomsExport  to Icons.Default.ArrowCircleUp
     PackageStatus.CUSTOMS_IMPORT   -> StatusCustomsImport  to Icons.Default.ArrowCircleDown
     PackageStatus.CUSTOMS          -> StatusCustoms        to Icons.Default.GppBad
+    PackageStatus.ARRIVING         -> StatusOutForDelivery to Icons.Default.FlightLand
     PackageStatus.OUT_FOR_DELIVERY -> StatusOutForDelivery to Icons.Default.LocalShipping
     PackageStatus.AWAITING_PICKUP  -> StatusAwaitingPickup to Icons.Default.Inbox
     PackageStatus.DELIVERED        -> StatusDelivered      to Icons.Default.CheckCircle

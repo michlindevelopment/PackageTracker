@@ -27,6 +27,50 @@ object StatusMapper {
     }
 
     /**
+     * Customs-anchored status derivation. [actionCodes] must be newest-first,
+     * with advisory codes already removed by the caller.
+     *
+     * The problem this solves: Cainiao emits `LH_*` (line-haul) scans both
+     * BEFORE export customs (origin-hub handoff) and AFTER import customs
+     * (line-haul to the destination). [mapActionCode] collapses all of them to
+     * [PackageStatus.IN_TRANSIT] (stepper position 3), so a normal movement
+     * scan arriving after import customs (position 4) makes the status appear
+     * to jump BACKWARD to "In Transit".
+     *
+     * Fix: treat the export/import customs events as monotonic signposts. When
+     * the latest meaningful scan is an ambiguous "moving" event, resolve it by
+     * which customs milestones already appear in the history:
+     *   - import customs seen  -> [PackageStatus.ARRIVING]  (in destination country)
+     *   - else export customs  -> [PackageStatus.IN_FLIGHT] (international leg)
+     *   - else                 -> [PackageStatus.IN_TRANSIT] (no customs to anchor;
+     *                             safe — nothing for it to look "behind")
+     *
+     * Unambiguous latest scans (delivered, out-for-delivery, awaiting pickup,
+     * exception, a customs scan itself, shipped/order-placed) are trusted as-is.
+     */
+    fun mapFromHistory(actionCodes: List<String>, progressRate: Float? = null): PackageStatus {
+        val base = mapActionCode(actionCodes.firstOrNull())
+
+        // Latest scan is already an unambiguous milestone — trust it directly.
+        when (base) {
+            PackageStatus.DELIVERED, PackageStatus.AWAITING_PICKUP,
+            PackageStatus.OUT_FOR_DELIVERY, PackageStatus.EXCEPTION,
+            PackageStatus.CUSTOMS_IMPORT, PackageStatus.CUSTOMS_EXPORT,
+            PackageStatus.SHIPPED, PackageStatus.ORDER_PLACED -> return base
+            else -> Unit // IN_TRANSIT / CUSTOMS / UNKNOWN → resolve by context below
+        }
+
+        val sawImport = actionCodes.any { mapActionCode(it) == PackageStatus.CUSTOMS_IMPORT }
+        val sawExport = actionCodes.any { mapActionCode(it) == PackageStatus.CUSTOMS_EXPORT }
+        return when {
+            sawImport -> PackageStatus.ARRIVING
+            sawExport -> PackageStatus.IN_FLIGHT
+            base == PackageStatus.IN_TRANSIT -> PackageStatus.IN_TRANSIT
+            else -> mapByProgress(progressRate) // UNKNOWN/CUSTOMS with no anchors
+        }
+    }
+
+    /**
      * Coarse fallback used when [mapActionCode] returns [PackageStatus.UNKNOWN].
      * Splits `[0, 1]` into six equal buckets — one per in-flight status, in
      * pipeline order. Examples (matches the spec the user gave):
