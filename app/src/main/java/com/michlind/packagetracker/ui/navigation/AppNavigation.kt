@@ -23,7 +23,9 @@ import com.michlind.packagetracker.ui.contributors.ContributorsScreen
 import com.michlind.packagetracker.ui.debug.RawResponseScreen
 import com.michlind.packagetracker.ui.detail.DetailScreen
 import com.michlind.packagetracker.ui.home.HomeScreen
+import com.michlind.packagetracker.ui.search.SearchScreen
 import com.michlind.packagetracker.ui.settings.SettingsScreen
+import com.michlind.packagetracker.ui.statistics.StatisticsScreen
 
 @Composable
 fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
@@ -78,6 +80,12 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
                 },
+                onSearchClick = {
+                    navController.navigate(Screen.Search.route)
+                },
+                onStatisticsClick = {
+                    navController.navigate(Screen.Statistics.route)
+                },
                 onSignInToAliExpress = {
                     navController.navigate(Screen.AliLogin.route)
                 },
@@ -88,6 +96,21 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 onRefreshConsumed = {
                     backStackEntry.savedStateHandle["aliImportDone"] = false
                 }
+            )
+        }
+
+        composable(Screen.Search.route) {
+            SearchScreen(
+                onBack = { navController.popBackStack() },
+                onPackageClick = { id ->
+                    navController.navigate(Screen.Detail.createRoute(id))
+                }
+            )
+        }
+
+        composable(Screen.Statistics.route) {
+            StatisticsScreen(
+                onBack = { navController.popBackStack() }
             )
         }
 

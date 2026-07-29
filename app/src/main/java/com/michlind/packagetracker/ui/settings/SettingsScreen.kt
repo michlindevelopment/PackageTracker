@@ -304,6 +304,50 @@ fun SettingsScreen(
                         onCheckedChange = { viewModel.setMockTrackingEnabled(it) }
                     )
                 }
+
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.seedMockPackages() }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Add mock packages",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Debug: insert ~12 fake packages (to-ship, " +
+                                "in-transit, a combined group, received) for " +
+                                "testing tabs, search, sort and grouping.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.removeMockPackages() }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Remove mock packages",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Debug: delete every package whose name " +
+                                "starts with \"Mock — \" or tracking number " +
+                                "starts with MOCK.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(16.dp))

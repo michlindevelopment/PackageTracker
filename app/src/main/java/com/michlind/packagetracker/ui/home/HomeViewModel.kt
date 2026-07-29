@@ -407,10 +407,16 @@ class HomeViewModel @Inject constructor(
                             }.getOrElse { ImportResult.FAILED }
                         }
                         _bgImportProgress.value = _bgImportProgress.value?.let { p ->
+                            // Orders resolve out of order under the concurrent
+                            // tracking-lookup pool, so event.index (the order's
+                            // position in the list) arrives non-monotonically.
+                            // Count completed orders locally so the banner and
+                            // progress bar only ever move forward.
+                            val done = (p.current + 1).coerceAtMost(event.total)
                             p.copy(
-                                current = event.index,
+                                current = done,
                                 total = event.total,
-                                statusText = "Importing ${event.index} / ${event.total}",
+                                statusText = "Importing $done / ${event.total}",
                                 added = p.added + if (result == ImportResult.ADDED) 1 else 0,
                                 upgraded = p.upgraded + if (result == ImportResult.UPGRADED) 1 else 0,
                                 skipped = p.skipped + if (result == ImportResult.SKIPPED) 1 else 0,

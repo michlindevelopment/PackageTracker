@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -17,6 +18,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +31,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -65,6 +70,7 @@ import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,6 +81,7 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -84,12 +91,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -108,6 +118,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -374,6 +386,9 @@ private fun DetailContent(
     val pagerState = rememberPagerState(pageCount = { tabCount })
     val tabScope = rememberCoroutineScope()
 
+    // Tapping the header thumbnail opens an animated full-screen viewer.
+    var showFullImage by remember { mutableStateOf(false) }
+
     // Collapse the bulky ETA card + Shipping Progress stepper when the
     // user scrolls down inside a pager page, expand them when scrolling
     // back to the top. Status header stays pinned so the package's
@@ -423,7 +438,12 @@ private fun DetailContent(
                 modifier = Modifier
                     .size(80.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .then(
+                        if (pkg.photoUri != null) {
+                            Modifier.clickable { showFullImage = true }
+                        } else Modifier
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 if (pkg.photoUri != null) {
@@ -600,7 +620,7 @@ private fun DetailContent(
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
-                        Text("Tracking")
+                        Text("Track")
                     }
                 }
             )
@@ -682,6 +702,106 @@ private fun DetailContent(
                     .align(Alignment.TopCenter),
                 strokeCap = StrokeCap.Round
             )
+        }
+
+        // Full-screen animated image viewer — opened by tapping the header
+        // thumbnail. Supports pinch-to-zoom, pan and tap/double-tap.
+        if (showFullImage && pkg.photoUri != null) {
+            FullScreenImageViewer(
+                model = pkg.photoUri,
+                onDismiss = { showFullImage = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun FullScreenImageViewer(
+    model: Any?,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        // Animate the popup in from slightly small + transparent so the card
+        // feels like it grows out of the thumbnail.
+        var shown by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { shown = true }
+        val entry by animateFloatAsState(
+            targetValue = if (shown) 1f else 0f,
+            animationSpec = tween(durationMillis = 220),
+            label = "imageViewerEntry"
+        )
+
+        // Pinch-to-zoom + pan. Reset to fit when zoomed back to 1x.
+        var scale by remember { mutableFloatStateOf(1f) }
+        var offset by remember { mutableStateOf(Offset.Zero) }
+        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+            scale = (scale * zoomChange).coerceIn(1f, 5f)
+            offset = if (scale > 1f) offset + panChange else Offset.Zero
+        }
+
+        // Cap the card height so a tall image never overflows the screen.
+        val maxCardHeight = (LocalConfiguration.current.screenHeightDp * 0.82f).dp
+        val cardShape = RoundedCornerShape(24.dp)
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                // Dimmed scrim that fades in with the entry animation. Tapping
+                // anywhere outside the card dismisses (unless zoomed in).
+                .background(Color.Black.copy(alpha = 0.25f * entry))
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        // Only dismiss on a plain tap when not zoomed in, so
+                        // tapping while panning a zoomed image doesn't close it.
+                        onTap = { if (scale <= 1.01f) onDismiss() }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = cardShape,
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 16.dp,
+                modifier = Modifier
+                    .padding(horizontal = 24.dp, vertical = 48.dp)
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        // Grow the whole card in (0.85x -> 1x) and fade it in.
+                        val enterScale = 0.85f + 0.15f * entry
+                        scaleX = enterScale
+                        scaleY = enterScale
+                        alpha = entry
+                    }
+            ) {
+                AsyncImage(
+                    model = model,
+                    contentDescription = "Package photo",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = maxCardHeight)
+                        .clip(cardShape)
+                        .transformable(transformState)
+                        // Same tap handling as the scrim so a plain tap on the
+                        // image itself also dismisses (guarded when zoomed in).
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = { if (scale <= 1.01f) onDismiss() }
+                            )
+                        }
+                        .graphicsLayer {
+                            // Pinch/double-tap zoom + pan, layered on top of
+                            // the card's entry animation.
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = offset.x
+                            translationY = offset.y
+                        }
+                )
+            }
         }
     }
 }

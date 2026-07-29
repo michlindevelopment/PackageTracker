@@ -26,30 +26,33 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -58,6 +61,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -95,6 +103,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -119,6 +128,8 @@ fun HomeScreen(
     onPackageClick: (Long) -> Unit,
     onAddClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onSearchClick: () -> Unit = {},
+    onStatisticsClick: () -> Unit = {},
     onSignInToAliExpress: () -> Unit,
     onVerifyCaptcha: (trackingNumber: String) -> Unit,
     refreshAndShowInTransit: Boolean = false,
@@ -139,14 +150,14 @@ fun HomeScreen(
     val aliDisconnected by viewModel.aliDisconnected.collectAsStateWithLifecycle()
     val showDisconnectedDialog by viewModel.showDisconnectedDialog.collectAsStateWithLifecycle()
     val showChangelog by viewModel.showChangelog.collectAsStateWithLifecycle()
-    var sortMenuOpen by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    // Default to "In Transit" (page 1) on cold start; rememberPagerState
+    // Default to "Active" (page 0) on cold start; rememberPagerState
     // is rememberSaveable internally so it survives Detail navigation.
-    val pagerState = rememberPagerState(initialPage = 1) { 3 }
+    val pagerState = rememberPagerState(initialPage = 0) { 2 }
 
     // Long-press action menu state — single source of truth for both groups and standalone packages
     var actionMenuGroup by remember { mutableStateOf<PackageGroup?>(null) }
@@ -189,7 +200,7 @@ fun HomeScreen(
     // bg-import banner above the list shows live progress regardless of tab.
     LaunchedEffect(refreshAndShowInTransit) {
         if (refreshAndShowInTransit) {
-            pagerState.animateScrollToPage(1)
+            pagerState.animateScrollToPage(0)
             viewModel.fullFetchThenSyncStatus()
             onRefreshConsumed()
         }
@@ -493,10 +504,28 @@ fun HomeScreen(
         }
     }
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            AppDrawerContent(
+                currentSort = sortMode,
+                onSortSelected = { viewModel.setSortMode(it) },
+                onSearch = onSearchClick,
+                onStatistics = onStatisticsClick,
+                onSettings = onSettingsClick,
+                onClose = { scope.launch { drawerState.close() } }
+            )
+        }
+    ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
+                navigationIcon = {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Icon(Icons.Default.Menu, contentDescription = "Menu")
+                    }
+                },
                 actions = {
                     // Hide the refresh icon entirely when the user has no
                     // packages anywhere (To Ship + In Transit + Received all
@@ -519,34 +548,6 @@ fun HomeScreen(
                                 Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
                             }
                         }
-                    }
-                    Box {
-                        IconButton(onClick = { sortMenuOpen = true }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Sort,
-                                contentDescription = "Sort"
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = sortMenuOpen,
-                            onDismissRequest = { sortMenuOpen = false }
-                        ) {
-                            SortMenuItem("Progress", SortMode.CLOSEST_TO_DELIVERY, sortMode) {
-                                viewModel.setSortMode(it); sortMenuOpen = false
-                            }
-                            SortMenuItem("Last shipped", SortMode.LAST_SHIPPED, sortMode) {
-                                viewModel.setSortMode(it); sortMenuOpen = false
-                            }
-                            SortMenuItem("First shipped", SortMode.FIRST_SHIPPED, sortMode) {
-                                viewModel.setSortMode(it); sortMenuOpen = false
-                            }
-                            SortMenuItem("A → Z", SortMode.A_TO_Z, sortMode) {
-                                viewModel.setSortMode(it); sortMenuOpen = false
-                            }
-                        }
-                    }
-                    IconButton(onClick = onSettingsClick) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
             )
@@ -598,16 +599,11 @@ fun HomeScreen(
                 Tab(
                     selected = pagerState.currentPage == 0,
                     onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
-                    text = { Text(stringResource(R.string.tab_not_yet_sent)) }
+                    text = { Text(stringResource(R.string.tab_in_transit)) }
                 )
                 Tab(
                     selected = pagerState.currentPage == 1,
                     onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
-                    text = { Text(stringResource(R.string.tab_in_transit)) }
-                )
-                Tab(
-                    selected = pagerState.currentPage == 2,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
                     text = { Text(stringResource(R.string.tab_received)) }
                 )
             }
@@ -637,22 +633,16 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 when (page) {
-                    0 -> NotYetSentList(
-                        packages = notYetSent,
+                    0 -> ActiveList(
+                        groups = activeGroups,
+                        notYetSent = notYetSent,
+                        sortMode = sortMode,
                         onPackageClick = onPackageClick,
-                        onLongPress = { actionMenuPkg = it },
+                        onGroupLongPress = { actionMenuGroup = it },
+                        onPackageLongPress = { actionMenuPkg = it },
                         refreshingTrackingNumber = refreshingTn
                     )
                     1 -> GroupList(
-                        groups = activeGroups,
-                        emptyIcon = R.drawable.ic_empty_transit,
-                        emptyTitle = stringResource(R.string.empty_in_transit),
-                        emptySubtitle = stringResource(R.string.empty_in_transit_sub),
-                        onPackageClick = onPackageClick,
-                        onLongPress = { actionMenuGroup = it },
-                        refreshingTrackingNumber = refreshingTn
-                    )
-                    2 -> GroupList(
                         groups = receivedGroups,
                         emptyIcon = R.drawable.ic_empty_received,
                         emptyTitle = stringResource(R.string.empty_received),
@@ -665,6 +655,7 @@ fun HomeScreen(
             }
         }
         }
+    }
     }
 }
 
@@ -702,37 +693,67 @@ private fun GroupList(
     }
 }
 
+// The "Active" tab: in-transit groups merged with the not-yet-sent
+// (blank tracking-number) packages. TrackedPackages can't be grouped
+// like the others (no tracking number to group by), so the merge happens
+// here at the rendering level: two `items` blocks in a single LazyColumn.
+// The placement of the to-ship block is sort-aware: with "Newest first"
+// (LAST_SHIPPED) the to-ship packages are the newest of all — not even
+// shipped yet — so their block goes on top; for every other sort mode
+// (oldest first, arriving soonest, A→Z) it sits at the bottom. Ordering
+// WITHIN each block already follows the sort mode from the ViewModel.
+// The shared EmptyState shows only when BOTH lists are empty.
 @Composable
-private fun NotYetSentList(
-    packages: List<TrackedPackage>,
+private fun ActiveList(
+    groups: List<PackageGroup>,
+    notYetSent: List<TrackedPackage>,
+    sortMode: SortMode,
     onPackageClick: (Long) -> Unit,
-    onLongPress: (TrackedPackage) -> Unit,
+    onGroupLongPress: (PackageGroup) -> Unit,
+    onPackageLongPress: (TrackedPackage) -> Unit,
     refreshingTrackingNumber: String?
 ) {
-    if (packages.isEmpty()) {
+    if (groups.isEmpty() && notYetSent.isEmpty()) {
         EmptyState(
             iconRes = R.drawable.ic_empty_transit,
-            title = stringResource(R.string.empty_not_yet_sent),
-            subtitle = stringResource(R.string.empty_not_yet_sent_sub)
+            title = stringResource(R.string.empty_in_transit),
+            subtitle = stringResource(R.string.empty_in_transit_sub)
         )
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)
         ) {
-            items(packages, key = { it.id }) { pkg ->
-                PackageCard(
-                    pkg = pkg,
-                    onClick = { onPackageClick(pkg.id) },
-                    onLongClick = { onLongPress(pkg) },
+            val notYetSentItems: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
+                items(notYetSent, key = { it.id }) { pkg ->
+                    PackageCard(
+                        pkg = pkg,
+                        onClick = { onPackageClick(pkg.id) },
+                        onLongClick = { onPackageLongPress(pkg) },
+                        isRefreshing = refreshingTrackingNumber != null &&
+                            refreshingTrackingNumber == pkg.trackingNumber,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .animateItem()
+                    )
+                }
+            }
+            if (sortMode == SortMode.LAST_SHIPPED) notYetSentItems()
+            items(groups, key = { it.trackingNumber }) { group ->
+                PackageGroupCard(
+                    group = group,
+                    onPackageClick = onPackageClick,
+                    onLongClick = { onGroupLongPress(group) },
                     isRefreshing = refreshingTrackingNumber != null &&
-                        refreshingTrackingNumber == pkg.trackingNumber,
+                        refreshingTrackingNumber == group.trackingNumber,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                         .animateItem()
                 )
             }
+            if (sortMode != SortMode.LAST_SHIPPED) notYetSentItems()
         }
     }
 }
@@ -945,20 +966,168 @@ private fun SubPackageRow(pkg: TrackedPackage, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun SortMenuItem(
-    label: String,
-    mode: SortMode,
-    current: SortMode,
-    onPick: (SortMode) -> Unit
-) {
-    DropdownMenuItem(
-        text = { Text(label) },
-        onClick = { onPick(mode) },
-        trailingIcon = if (mode == current) {
-            { Icon(Icons.Default.Check, contentDescription = null) }
-        } else null
+// Human-readable labels for the sort modes, shared by the drawer row and the
+// sort picker sheet so the two can never drift apart. Every label names what
+// ends up at the TOP of the list ("Newest first"), never the ship event itself
+// ("Last shipped"), which read ambiguously to users.
+private data class SortOption(
+    val mode: SortMode,
+    val label: String,
+    val description: String
+)
+
+private val SORT_OPTIONS = listOf(
+    SortOption(
+        SortMode.CLOSEST_TO_DELIVERY,
+        "Arriving soonest",
+        "Packages closest to delivery at the top"
+    ),
+    SortOption(
+        SortMode.LAST_SHIPPED,
+        "Newest first",
+        "Recently shipped packages at the top"
+    ),
+    SortOption(
+        SortMode.FIRST_SHIPPED,
+        "Oldest first",
+        "Longest-waiting packages at the top"
+    ),
+    SortOption(
+        SortMode.A_TO_Z,
+        "Name (A → Z)",
+        "Alphabetical by item name"
     )
+)
+
+private fun sortLabel(mode: SortMode): String =
+    SORT_OPTIONS.firstOrNull { it.mode == mode }?.label ?: SORT_OPTIONS.first().label
+
+// Left navigation drawer opened by the top-bar hamburger. Holds the actions
+// moved out of the app bar: Search, a single "Sort by" entry showing the active
+// mode (tapping it opens the sort picker sheet), and Settings. Refresh stays in
+// the top bar.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppDrawerContent(
+    currentSort: SortMode,
+    onSortSelected: (SortMode) -> Unit,
+    onSearch: () -> Unit,
+    onStatistics: () -> Unit,
+    onSettings: () -> Unit,
+    onClose: () -> Unit
+) {
+    var showSortPicker by remember { mutableStateOf(false) }
+    ModalDrawerSheet {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+        ) {
+            Spacer(Modifier.height(24.dp))
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            NavigationDrawerItem(
+                label = { Text("Search") },
+                icon = { Icon(Icons.Default.Search, contentDescription = null) },
+                selected = false,
+                onClick = { onClose(); onSearch() },
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+            NavigationDrawerItem(
+                label = { Text("Sort by") },
+                icon = { Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null) },
+                badge = {
+                    Text(
+                        text = sortLabel(currentSort),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 140.dp)
+                    )
+                },
+                selected = false,
+                onClick = { showSortPicker = true },
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+            NavigationDrawerItem(
+                label = { Text("Statistics") },
+                icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
+                selected = false,
+                onClick = { onClose(); onStatistics() },
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            NavigationDrawerItem(
+                label = { Text("Settings") },
+                icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                selected = false,
+                onClick = { onClose(); onSettings() },
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+        }
+    }
+
+    // Single-choice picker for the four sort modes. A bottom sheet (rather than a
+    // dialog) keeps every option on one uncramped, thumb-reachable line even at
+    // large system font scales, and matches the Add/Refresh sheets elsewhere.
+    if (showSortPicker) {
+        val sortSheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { showSortPicker = false },
+            sheetState = sortSheetState
+        ) {
+            // Scrolls so the four two-line rows stay reachable at large font scales.
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 24.dp)
+            ) {
+                Text(
+                    text = "Sort by",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
+                )
+                SORT_OPTIONS.forEach { option ->
+                    val selected = currentSort == option.mode
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = selected,
+                                role = Role.RadioButton,
+                                onClick = {
+                                    onSortSelected(option.mode)
+                                    showSortPicker = false
+                                }
+                            )
+                            .padding(horizontal = 24.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = selected, onClick = null)
+                        Spacer(Modifier.width(20.dp))
+                        // No maxLines: at large font scales the description must
+                        // wrap onto extra lines rather than clip.
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = option.label,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = option.description,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
