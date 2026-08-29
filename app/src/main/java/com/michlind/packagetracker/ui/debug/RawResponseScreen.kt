@@ -74,14 +74,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-// Cainiao action codes the repo treats as advisories (forecasts/ASNs) when
-// picking the latest meaningful event. Mirrors ADVISORY_ACTION_CODES in
-// PackageRepositoryImpl — kept in sync by hand because that one is private.
-private val ADVISORY_ACTION_CODES_FOR_DEBUG = setOf(
-    "LAST_MILE_ASN_NOTIFY",
-    "COMMON_INTRANSIT"
-)
-
 data class RawResponseState(
     val pkg: TrackedPackage? = null,
     val prettyJson: String? = null,
@@ -90,9 +82,9 @@ data class RawResponseState(
     // simple (no need to re-stringify on click).
     val parsedJson: JsonElement? = null,
     val latestActionCode: String? = null,
-    // True iff the latest non-advisory action code has an explicit mapping
-    // in StatusMapper.mapActionCode (i.e. status came from the action-code
-    // table, not from the progressRate fallback bucket).
+    // True iff the latest non-advisory action code is explicitly mapped
+    // (StatusMapper.Confidence.STRONG) rather than guessed from its wording
+    // or fabricated by the progressRate fallback bucket.
     val statusFromMapping: Boolean = false
 )
 
@@ -117,12 +109,12 @@ class RawResponseViewModel @Inject constructor(
             val pretty = parsed?.let { PRETTY_GSON.toJson(it) } ?: pkg.rawApiJson
             val latestActionCode = pkg.events
                 .firstOrNull {
-                    it.actionCode.isNotBlank() &&
-                        it.actionCode !in ADVISORY_ACTION_CODES_FOR_DEBUG
+                    it.actionCode.isNotBlank() && !StatusMapper.isAdvisory(it.actionCode)
                 }
                 ?.actionCode
-            val fromMapping = latestActionCode != null &&
-                StatusMapper.mapActionCode(latestActionCode) != PackageStatus.UNKNOWN
+            val meaning = StatusMapper.classify(latestActionCode)
+            val fromMapping = meaning.confidence == StatusMapper.Confidence.STRONG &&
+                meaning.status != PackageStatus.UNKNOWN
             _state.value = RawResponseState(
                 pkg = pkg,
                 prettyJson = pretty,

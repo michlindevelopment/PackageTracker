@@ -23,22 +23,6 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
-// Cainiao action codes that are forecasts/advisory notifications rather than
-// real package progress — they show up at the top of the trace list but the
-// package may be far earlier in its journey. Skip these when deriving status
-// so a single advisory event doesn't outrank actual movement further down
-// the trace (and so an advisory-only trace falls through to the
-// progressRate-based status bucket).
-private val ADVISORY_ACTION_CODES = setOf(
-    // Destination carrier was notified the package will eventually arrive,
-    // but the package itself is typically still at origin.
-    "LAST_MILE_ASN_NOTIFY",
-    // Not in the official Alibaba TOP enum — Cainiao slaps this on
-    // pre-shipment ASNs ("Pre-Shipment Info Sent To …") which would
-    // otherwise read as real movement.
-    "COMMON_INTRANSIT"
-)
-
 @Singleton
 class PackageRepositoryImpl @Inject constructor(
     private val dao: PackageDao,
@@ -160,20 +144,13 @@ class PackageRepositoryImpl @Inject constructor(
                 )
             } ?: emptyList()
 
-            // Cainiao sometimes prepends advisory entries (e.g. an
-            // Advance Shipping Notice from the destination courier) that don't
-            // reflect actual package movement. Drop those so a forecast is
-            // neither treated as the latest state nor counted as a milestone.
-            // `events` is newest-first, so this list is too.
-            val meaningfulCodes = events
-                .map { it.actionCode }
-                .filter { it.isNotBlank() && it !in ADVISORY_ACTION_CODES }
-            // Customs-anchored: resolves ambiguous line-haul scans by which
-            // customs milestones have already happened, so the status never
-            // jumps backward to "In Transit" after clearing import customs.
-            val status = StatusMapper.mapFromHistory(
-                actionCodes = meaningfulCodes,
-                progressRate = data.processInfo?.progressRate
+            // Hand the whole trace (newest-first) to the mapper — it does its
+            // own advisory filtering, customs anchoring and milestone floor,
+            // so nothing is discarded before it gets a look.
+            val status = StatusMapper.deriveStatus(
+                actionCodes = events.map { it.actionCode },
+                progressRate = data.processInfo?.progressRate,
+                apiStatus = data.status
             )
 
             val destCarrier = data.destCpInfo?.let { cp ->
