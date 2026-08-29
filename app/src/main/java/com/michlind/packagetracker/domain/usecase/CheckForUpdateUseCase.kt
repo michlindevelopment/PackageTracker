@@ -1,6 +1,7 @@
 package com.michlind.packagetracker.domain.usecase
 
 import com.michlind.packagetracker.BuildConfig
+import com.michlind.packagetracker.data.api.GitHubAsset
 import com.michlind.packagetracker.data.api.GitHubReleaseService
 import com.michlind.packagetracker.domain.model.UpdateCheckResult
 import javax.inject.Inject
@@ -12,7 +13,7 @@ class CheckForUpdateUseCase @Inject constructor(
         val release = service.latestRelease(REPO_OWNER, REPO_NAME)
         val latest = release.tagName.removePrefix("v")
         val current = BuildConfig.VERSION_NAME
-        val apkAsset = release.assets.firstOrNull { it.name.endsWith(".apk") }
+        val apkAsset = pickApkForThisBuild(release.assets)
 
         if (apkAsset != null && isNewer(latest, current)) {
             UpdateCheckResult.Available(
@@ -25,6 +26,24 @@ class CheckForUpdateUseCase @Inject constructor(
         } else {
             UpdateCheckResult.UpToDate
         }
+    }
+
+    /**
+     * A release carries one APK per flavor (app-release.apk and
+     * app-release-nosms.apk), so an exact name match is what keeps a no-SMS
+     * install from updating itself into the SMS build — which would silently
+     * hand the app back the READ_SMS permission the user chose to avoid.
+     *
+     * Only the SMS build falls back to "the single APK on the release". That
+     * fallback exists for releases cut before the flavor split, which carry
+     * one unnamed-for-flavor APK — and that APK is always the SMS build. For
+     * nosms the same fallback would be a downgrade in privacy, so it reports
+     * no update instead and waits for a release that includes its own APK.
+     */
+    private fun pickApkForThisBuild(assets: List<GitHubAsset>): GitHubAsset? {
+        assets.firstOrNull { it.name == BuildConfig.UPDATE_APK_ASSET }?.let { return it }
+        if (!BuildConfig.SMS_ENABLED) return null
+        return assets.filter { it.name.endsWith(".apk") }.singleOrNull()
     }
 
     // Compare semantic version strings like "1.0.10" > "1.0.9". Splits on '.',

@@ -645,8 +645,9 @@ class HomeViewModel @Inject constructor(
                     // Includes the user-supplied local-courier TNs (typed in
                     // the Courier tab) on top of the Cainiao TNs, so the
                     // SMS tab catches handover-courier notifications too.
-                    // No-ops silently if the user hasn't granted READ_SMS.
-                    runCatching {
+                    // No-ops silently if the user hasn't granted READ_SMS,
+                    // and is compiled out entirely in the nosms flavor.
+                    if (BuildConfig.SMS_ENABLED) runCatching {
                         val localTns = withContext(Dispatchers.IO) {
                             runCatching { repository.getActiveLocalTrackingNumbers() }
                                 .getOrDefault(emptyList())

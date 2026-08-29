@@ -20,12 +20,8 @@ object Changelog {
     data class Item(val kind: Kind, val text: String)
 
     val ITEMS: List<Item> = listOf(
-        Item(Kind.NEW, "Side menu — search, sort and settings now live in one place."),
-        Item(Kind.NEW, "Search your packages by name or tracking number."),
-        Item(Kind.NEW, "Statistics — deliveries per month, average delivery time and more."),
-        Item(Kind.NEW, "Tap a package photo to view it full screen (pinch to zoom)."),
-        Item(Kind.IMPROVEMENT, "One \"On the Way\" tab — to-ship and in-transit packages together."),
-        Item(Kind.IMPROVEMENT, "Clearer sort options that say what ends up on top."),
-        Item(Kind.BUGFIX, "Import progress no longer jumps backward.")
+        Item(Kind.BUGFIX, "Package status was wrong for some shipments — parcels already on their way could still show as \"Order Placed\"."),
+        Item(Kind.IMPROVEMENT, "Status no longer slips backwards after customs, and failed or returned deliveries are flagged properly."),
+        Item(Kind.IMPROVEMENT, "Carrier updates we don't recognise are now read for what they say instead of being ignored.")
     )
 }

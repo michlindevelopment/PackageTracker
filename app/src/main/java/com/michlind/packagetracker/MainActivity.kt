@@ -88,19 +88,24 @@ class MainActivity : ComponentActivity() {
                 // Ask for the runtime permissions the app needs at launch:
                 //   - POST_NOTIFICATIONS (API 33+): status-change pings.
                 //   - READ_SMS: scanning the inbox for tracking-number hits.
+                //     Only in the `full` flavor — the nosms build doesn't
+                //     declare it, and requesting an undeclared permission is
+                //     an instant silent denial.
                 // Bundling them via rememberMultiplePermissionsState avoids
                 // the "second prompt is silently suppressed" race we'd hit
                 // if MainActivity and HomeScreen each fired their own
                 // single-permission requests in quick succession.
                 val permissions = buildList {
-                    add(Manifest.permission.READ_SMS)
+                    if (BuildConfig.SMS_ENABLED) add(Manifest.permission.READ_SMS)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         add(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
+                // On nosms below API 33 the list ends up empty — nothing to
+                // ask for, so don't fire a request at all.
                 val multiPermissions = rememberMultiplePermissionsState(permissions)
                 LaunchedEffect(Unit) {
-                    if (!multiPermissions.allPermissionsGranted) {
+                    if (permissions.isNotEmpty() && !multiPermissions.allPermissionsGranted) {
                         multiPermissions.launchMultiplePermissionRequest()
                     }
                 }

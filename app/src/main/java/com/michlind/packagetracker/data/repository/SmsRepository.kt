@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.provider.Telephony
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.michlind.packagetracker.BuildConfig
 import com.michlind.packagetracker.data.db.TrackingSmsDao
 import com.michlind.packagetracker.data.db.TrackingSmsEntity
 import com.michlind.packagetracker.domain.model.TrackingSms
@@ -28,6 +29,11 @@ private const val TAG = "SmsRepo"
  * Permission failures are swallowed silently so syncStatus() can call this
  * unconditionally — callers don't need to gate on permission state. The
  * DetailScreen SMS tab is what surfaces "permission required" UX.
+ *
+ * In the `nosms` flavor [BuildConfig.SMS_ENABLED] is a compile-time `false`,
+ * so every entry point below short-circuits and R8 drops the inbox query from
+ * the release build. Callers still gate on the same constant — this is the
+ * backstop, not the only guard.
  */
 @Singleton
 class SmsRepository @Inject constructor(
@@ -36,7 +42,8 @@ class SmsRepository @Inject constructor(
 ) {
 
     fun hasPermission(): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
+        BuildConfig.SMS_ENABLED &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
             PackageManager.PERMISSION_GRANTED
 
     /**
@@ -67,6 +74,7 @@ class SmsRepository @Inject constructor(
      * without a pre-check). Idempotent: re-scans don't duplicate rows.
      */
     suspend fun scanForTrackingNumbers(trackingNumbers: List<String>) {
+        if (!BuildConfig.SMS_ENABLED) return
         if (trackingNumbers.isEmpty()) return
         if (!hasPermission()) {
             Log.d(TAG, "scan skipped — READ_SMS not granted")

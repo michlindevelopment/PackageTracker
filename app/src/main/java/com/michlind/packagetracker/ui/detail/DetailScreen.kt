@@ -126,6 +126,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.michlind.packagetracker.BuildConfig
 import com.michlind.packagetracker.R
 import com.michlind.packagetracker.domain.model.DestCarrierInfo
 import com.michlind.packagetracker.domain.model.PackageStatus
@@ -179,7 +180,7 @@ fun DetailScreen(
 
     LaunchedEffect(packageId) {
         viewModel.load(packageId)
-        viewModel.refreshSmsPermission()
+        if (BuildConfig.SMS_ENABLED) viewModel.refreshSmsPermission()
     }
     LaunchedEffect(deleted) { if (deleted) onBack() }
 
@@ -205,7 +206,7 @@ fun DetailScreen(
         )
     }
 
-    if (showSmsBlockedDialog) {
+    if (BuildConfig.SMS_ENABLED && showSmsBlockedDialog) {
         AlertDialog(
             onDismissRequest = { showSmsBlockedDialog = false },
             title = { Text("SMS access is blocked") },
@@ -375,14 +376,18 @@ private fun DetailContent(
 
     val nameTooltipState = rememberTooltipState(isPersistent = true)
     val tooltipScope = rememberCoroutineScope()
-    // Tracking, SMS and Courier are always present. The Courier tab shows the
-    // Cainiao-reported destination carrier once available, but stays visible
-    // beforehand so the local-courier tracking number can always be entered
-    // (and so a once-seen carrier survives a reinstall that wiped the DB).
+    // Tracking and Courier are always present; SMS only in the `full` flavor.
+    // The Courier tab shows the Cainiao-reported destination carrier once
+    // available, but stays visible beforehand so the local-courier tracking
+    // number can always be entered (and so a once-seen carrier survives a
+    // reinstall that wiped the DB).
+    // smsIndex is -1 when SMS is compiled out, which matches no page — the
+    // `when (page)` below simply never selects it.
+    val smsEnabled = BuildConfig.SMS_ENABLED
     val trackingIndex = 0
-    val smsIndex = 1
-    val courierIndex = 2
-    val tabCount = 3
+    val smsIndex = if (smsEnabled) 1 else -1
+    val courierIndex = if (smsEnabled) 2 else 1
+    val tabCount = if (smsEnabled) 3 else 2
     val pagerState = rememberPagerState(pageCount = { tabCount })
     val tabScope = rememberCoroutineScope()
 
@@ -601,8 +606,8 @@ private fun DetailContent(
             }
         }
 
-        // Tabs — pinned right under Shipping Progress. Tracking, SMS and
-        // Courier are all always shown.
+        // Tabs — pinned right under Shipping Progress. Tracking and Courier
+        // are always shown; SMS only when the flavor includes it.
         PrimaryTabRow(
             selectedTabIndex = pagerState.currentPage,
             modifier = Modifier.padding(top = 8.dp)
@@ -624,25 +629,27 @@ private fun DetailContent(
                     }
                 }
             )
-            Tab(
-                selected = pagerState.currentPage == smsIndex,
-                onClick = { tabScope.launch { pagerState.animateScrollToPage(smsIndex) } },
-                text = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Message,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        val label = if (smsMessages.isEmpty()) "SMS"
-                            else "SMS (${smsMessages.size})"
-                        Text(label)
+            if (smsEnabled) {
+                Tab(
+                    selected = pagerState.currentPage == smsIndex,
+                    onClick = { tabScope.launch { pagerState.animateScrollToPage(smsIndex) } },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Message,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            val label = if (smsMessages.isEmpty()) "SMS"
+                                else "SMS (${smsMessages.size})"
+                            Text(label)
+                        }
                     }
-                }
-            )
+                )
+            }
             Tab(
                 selected = pagerState.currentPage == courierIndex,
                 onClick = { tabScope.launch { pagerState.animateScrollToPage(courierIndex) } },
@@ -676,7 +683,9 @@ private fun DetailContent(
             ) {
                 when (page) {
                     trackingIndex -> trackingHistoryItems(events = pkg.events)
-                    smsIndex -> smsItems(
+                    // Guarded on the constant, not on smsIndex, so R8 drops
+                    // smsItems and its strings from the nosms build.
+                    smsIndex -> if (BuildConfig.SMS_ENABLED) smsItems(
                         trackingNumber = pkg.trackingNumber,
                         messages = smsMessages,
                         hasPermission = hasSmsPermission,

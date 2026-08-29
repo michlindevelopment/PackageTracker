@@ -83,6 +83,32 @@ android {
             signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
+
+    // Two shipping builds of the same app, same applicationId — installing one
+    // replaces the other:
+    //   full  — the normal app, reads the SMS inbox to match tracking numbers.
+    //   nosms — SMS stripped entirely. READ_SMS is not in the merged manifest
+    //           (it lives in src/full/AndroidManifest.xml), and SMS_ENABLED is
+    //           a compile-time false so R8 removes the UI and the scanner from
+    //           the release build rather than merely hiding them.
+    // The Room schema is identical across flavors: the tracking_sms table is
+    // still created, just never written to. That keeps migrations in lockstep
+    // so a user can move between the two builds without a reinstall.
+    flavorDimensions += "sms"
+    productFlavors {
+        create("full") {
+            dimension = "sms"
+            isDefault = true
+            buildConfigField("boolean", "SMS_ENABLED", "true")
+            buildConfigField("String", "UPDATE_APK_ASSET", "\"app-release.apk\"")
+        }
+        create("nosms") {
+            dimension = "sms"
+            buildConfigField("boolean", "SMS_ENABLED", "false")
+            buildConfigField("String", "UPDATE_APK_ASSET", "\"app-release-nosms.apk\"")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -175,22 +201,56 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
-// Build a signed release APK and upload it to GitHub Releases via the gh CLI.
-// Prereqs (one-time): install gh, then run `gh auth login` once.
+// Gradle names flavored outputs app-<flavor>-<buildType>.apk. Rename them to
+// the asset names the in-app updater looks for on the GitHub release —
+// CheckForUpdateUseCase matches BuildConfig.UPDATE_APK_ASSET exactly, so each
+// build only ever offers itself as an update.
+// Deliberately not a Copy task: Copy is skipped as NO-SOURCE when a source
+// file is missing, which would publish a release with one APK quietly absent.
+// A plain task always runs its action, so the check below can't be bypassed.
+val stageReleaseApks by tasks.registering {
+    group = "publishing"
+    description = "Collects both release APKs under outputs/release-apks with their published names."
+    dependsOn("assembleFullRelease", "assembleNosmsRelease")
+
+    val buildDir = layout.buildDirectory
+    val outDir = layout.buildDirectory.dir("outputs/release-apks")
+    val apks = mapOf(
+        "outputs/apk/full/release/app-full-release.apk" to "app-release.apk",
+        "outputs/apk/nosms/release/app-nosms-release.apk" to "app-release-nosms.apk"
+    )
+
+    doLast {
+        val dest = outDir.get().asFile.apply { mkdirs() }
+        apks.forEach { (from, to) ->
+            val src = buildDir.file(from).get().asFile
+            check(src.exists()) {
+                "Expected release APK not found: $src\n" +
+                    "Release signing must be configured in local.properties — an unsigned " +
+                    "build emits app-<flavor>-release-unsigned.apk instead."
+            }
+            src.copyTo(dest.resolve(to), overwrite = true)
+        }
+    }
+}
+
+// Build both signed release APKs and upload them to GitHub Releases via the gh
+// CLI. Prereqs (one-time): install gh, then run `gh auth login` once.
 // Usage: ./gradlew publishRelease
 val publishRelease by tasks.registering(Exec::class) {
     group = "publishing"
-    description = "Builds the release APK and creates a GitHub Release with it attached."
-    dependsOn("assembleRelease")
+    description = "Builds both release APKs and creates a GitHub Release with them attached."
+    dependsOn(stageReleaseApks)
 
     val versionName = android.defaultConfig.versionName ?: "0.0"
     val tag = "v$versionName"
-    val apk = layout.buildDirectory.file("outputs/apk/release/app-release.apk")
+    val staged = layout.buildDirectory.dir("outputs/release-apks").get()
 
     workingDir = rootDir
     commandLine(
         "gh", "release", "create", tag,
-        apk.get().asFile.absolutePath,
+        staged.file("app-release.apk").asFile.absolutePath,
+        staged.file("app-release-nosms.apk").asFile.absolutePath,
         "--title", tag,
         "--generate-notes"
     )
