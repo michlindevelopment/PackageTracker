@@ -29,20 +29,13 @@ class CheckForUpdateUseCase @Inject constructor(
     }
 
     /**
-     * A release carries one APK per flavor (app-release.apk and
-     * app-release-nosms.apk), so an exact name match is what keeps a no-SMS
-     * install from updating itself into the SMS build — which would silently
-     * hand the app back the READ_SMS permission the user chose to avoid.
-     *
-     * Only the SMS build falls back to "the single APK on the release". That
-     * fallback exists for releases cut before the flavor split, which carry
-     * one unnamed-for-flavor APK — and that APK is always the SMS build. For
-     * nosms the same fallback would be a downgrade in privacy, so it reports
-     * no update instead and waits for a release that includes its own APK.
+     * Releases carry a single APK named [RELEASE_APK_ASSET]. The fallback to
+     * "the only .apk on the release" covers releases whose asset was named
+     * differently — historically the flavored app-full-release.apk — so a
+     * rename doesn't silently stop the update prompt from ever appearing.
      */
     private fun pickApkForThisBuild(assets: List<GitHubAsset>): GitHubAsset? {
-        assets.firstOrNull { it.name == BuildConfig.UPDATE_APK_ASSET }?.let { return it }
-        if (!BuildConfig.SMS_ENABLED) return null
+        assets.firstOrNull { it.name == RELEASE_APK_ASSET }?.let { return it }
         return assets.filter { it.name.endsWith(".apk") }.singleOrNull()
     }
 
@@ -63,5 +56,8 @@ class CheckForUpdateUseCase @Inject constructor(
     private companion object {
         const val REPO_OWNER = "michlindevelopment"
         const val REPO_NAME = "PackageTracker"
+
+        /** Asset name produced by the `stageReleaseApks` Gradle task. */
+        const val RELEASE_APK_ASSET = "app-release.apk"
     }
 }

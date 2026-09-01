@@ -14,8 +14,10 @@
         android:name="android.permission.POST_NOTIFICATIONS"
         android:minSdkVersion="33" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- READ_SMS is declared in src/full/AndroidManifest.xml only, so the
-         nosms flavor ships without it. -->
+    <!-- Android's Restricted Settings lock greys this out for apps installed
+         the legacy way (tapping an APK). AppUpdater installs updates via a
+         PackageInstaller session, which is exempt, so the grant sticks. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
 
     <queries>
         <intent>
@@ -65,6 +67,13 @@
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
             android:theme="@style/Theme.AppCompat" />
+
+        <!-- Install-session callbacks from AppUpdater. Must be a manifest
+             receiver: the pending-user-action broadcast has to be deliverable
+             even if the app isn't in the foreground when it arrives. -->
+        <receiver
+            android:name=".data.updater.InstallResultReceiver"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

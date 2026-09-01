@@ -1,21 +1,29 @@
 package com.michlind.packagetracker.data.updater
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.content.pm.PackageInstaller
+import android.os.Build
 import android.provider.Settings
-import androidx.core.content.FileProvider
+import android.util.Log
 import androidx.core.net.toUri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "AppUpdater"
+
+/** Name of the APK inside the install session — arbitrary, but must be stable. */
+private const val SESSION_APK_NAME = "update.apk"
 
 sealed interface DownloadProgress {
     data class Progress(val bytesRead: Long, val total: Long) : DownloadProgress
@@ -73,14 +81,76 @@ class AppUpdater @Inject constructor(
         emit(DownloadProgress.Complete(target))
     }.flowOn(Dispatchers.IO)
 
-    fun launchInstall(file: File) {
-        val authority = "${context.packageName}.fileprovider"
-        val uri = FileProvider.getUriForFile(context, authority, file)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    /**
+     * Installs [file] through the session-based PackageInstaller API. Returns
+     * false if the session couldn't even be started (the user-facing install
+     * confirmation is asynchronous — see [InstallResultReceiver]).
+     *
+     * Using a session here rather than the old "fire an ACTION_VIEW intent at
+     * the APK" approach is load-bearing, not a cleanup. Android's Restricted
+     * Settings lock — which greys out SMS, accessibility, notification
+     * listener, overlay and usage-access for apps that didn't come from a
+     * store — keys off *how* the app was installed: session-based installs are
+     * exempt, legacy intent installs are not. Installing our own updates the
+     * legacy way re-armed that lock on every single update, which is why
+     * READ_SMS kept reverting to un-grantable no matter what the user did in
+     * Settings. Committing a session makes the app its own installer of record
+     * and keeps the exemption across updates.
+     *
+     * Note this only covers *updates*. A first install downloaded in a browser
+     * still arrives via the legacy path and still hits the lock once; the
+     * recovery flow for that is the "Allow restricted settings" dialog in
+     * DetailScreen.
+     */
+    suspend fun launchInstall(file: File): Boolean = withContext(Dispatchers.IO) {
+        val installer = context.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(
+            PackageInstaller.SessionParams.MODE_FULL_INSTALL
+        ).apply {
+            setAppPackageName(context.packageName)
+            // Restricted permissions are allowlisted by default, but state it
+            // explicitly — keeping READ_SMS holdable is the entire reason this
+            // code path exists, and a default is a thing that can change.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                setWhitelistedRestrictedPermissions(
+                    PackageInstaller.SessionParams.RESTRICTED_PERMISSIONS_ALL
+                )
+            }
         }
-        context.startActivity(intent)
+
+        var sessionId = -1
+        runCatching {
+            sessionId = installer.createSession(params)
+            installer.openSession(sessionId).use { session ->
+                session.openWrite(SESSION_APK_NAME, 0, file.length()).use { out ->
+                    file.inputStream().use { it.copyTo(out) }
+                    session.fsync(out)
+                }
+                session.commit(statusPendingIntent(sessionId).intentSender)
+            }
+            true
+        }.getOrElse { error ->
+            Log.w(TAG, "couldn't start install session", error)
+            // A created-but-uncommitted session lingers and eats disk until the
+            // system reaps it, so drop it on the way out.
+            if (sessionId != -1) runCatching { installer.abandonSession(sessionId) }
+            false
+        }
+    }
+
+    // The session id keys the PendingIntent so concurrent/retried installs
+    // don't clobber each other's callback. Must be mutable: the framework
+    // fills in EXTRA_STATUS and friends before delivering it.
+    private fun statusPendingIntent(sessionId: Int): PendingIntent {
+        var flags = PendingIntent.FLAG_UPDATE_CURRENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            flags = flags or PendingIntent.FLAG_MUTABLE
+        }
+        return PendingIntent.getBroadcast(
+            context,
+            sessionId,
+            Intent(context, InstallResultReceiver::class.java),
+            flags
+        )
     }
 }

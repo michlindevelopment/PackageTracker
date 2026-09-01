@@ -24,6 +24,8 @@ import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.domain.model.UpdateCheckResult
 import com.michlind.packagetracker.domain.repository.PackageRepository
 import com.michlind.packagetracker.domain.usecase.AddPackageUseCase
+import com.michlind.packagetracker.data.updater.AppUpdater
+import com.michlind.packagetracker.data.updater.DownloadProgress
 import com.michlind.packagetracker.domain.usecase.CheckForUpdateUseCase
 import com.michlind.packagetracker.domain.usecase.DeletePackageUseCase
 import com.michlind.packagetracker.domain.usecase.GetActivePackagesUseCase
@@ -157,6 +159,19 @@ data class BgImportProgress(
     val failed: Int = 0
 )
 
+/**
+ * State of the in-place update kicked off from the home screen's
+ * "Update available" dialog. Distinct from Settings' richer UpdateUiState —
+ * the dialog never checks or reports "up to date", it only ever acts on an
+ * update that's already known to exist.
+ */
+sealed interface UpdateDownloadState {
+    object Idle : UpdateDownloadState
+    data class Downloading(val percent: Int) : UpdateDownloadState
+    object NeedsInstallPermission : UpdateDownloadState
+    data class Error(val message: String) : UpdateDownloadState
+}
+
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     getActivePackages: GetActivePackagesUseCase,
@@ -174,6 +189,7 @@ class HomeViewModel @Inject constructor(
     private val changelogPrefs: ChangelogPreferenceRepository,
     private val syncOnResumePrefs: SyncOnResumePreferenceRepository,
     private val checkForUpdate: CheckForUpdateUseCase,
+    private val appUpdater: AppUpdater,
     private val smsRepository: SmsRepository,
     private val gson: Gson
 ) : ViewModel() {
@@ -229,6 +245,10 @@ class HomeViewModel @Inject constructor(
     // cold start re-checks and re-pops if still applicable.
     private val _updateAvailable = MutableStateFlow<UpdateCheckResult.Available?>(null)
     val updateAvailable: StateFlow<UpdateCheckResult.Available?> = _updateAvailable.asStateFlow()
+
+    // Progress of the in-place update started from that dialog's Update button.
+    private val _updateDownload = MutableStateFlow<UpdateDownloadState>(UpdateDownloadState.Idle)
+    val updateDownload: StateFlow<UpdateDownloadState> = _updateDownload.asStateFlow()
 
     // ─── Background AliExpress import (chained after refreshAll) ─────────────
     // Set true while HomeScreen should host the hidden WebView. The WebView's
@@ -645,9 +665,8 @@ class HomeViewModel @Inject constructor(
                     // Includes the user-supplied local-courier TNs (typed in
                     // the Courier tab) on top of the Cainiao TNs, so the
                     // SMS tab catches handover-courier notifications too.
-                    // No-ops silently if the user hasn't granted READ_SMS,
-                    // and is compiled out entirely in the nosms flavor.
-                    if (BuildConfig.SMS_ENABLED) runCatching {
+                    // No-ops silently if the user hasn't granted READ_SMS.
+                    runCatching {
                         val localTns = withContext(Dispatchers.IO) {
                             runCatching { repository.getActiveLocalTrackingNumbers() }
                                 .getOrDefault(emptyList())
@@ -782,8 +801,68 @@ class HomeViewModel @Inject constructor(
         _captchaTrackingNumber.value = null
     }
 
+    /**
+     * Download the available update and hand it to the installer, without
+     * leaving the home screen. This used to bounce the user to Settings to
+     * press a second Update button; Settings has nothing extra to offer, it
+     * just re-ran the same check and called the same two AppUpdater methods.
+     *
+     * Install confirmation is the system's own dialog, driven asynchronously
+     * by InstallResultReceiver — once launchInstall() returns true our part is
+     * done and the popup gets out of the way.
+     */
+    fun startUpdate() {
+        val url = _updateAvailable.value?.downloadUrl ?: return
+        if (_updateDownload.value is UpdateDownloadState.Downloading) return
+        // "Install unknown apps" is a prerequisite we can't grant ourselves —
+        // surface it as its own state so the dialog can offer the shortcut.
+        if (!appUpdater.canInstallApks()) {
+            _updateDownload.value = UpdateDownloadState.NeedsInstallPermission
+            return
+        }
+        viewModelScope.launch {
+            appUpdater.download(url).collect { progress ->
+                when (progress) {
+                    is DownloadProgress.Progress -> {
+                        val percent = if (progress.total > 0) {
+                            ((progress.bytesRead * 100) / progress.total).toInt()
+                        } else 0
+                        _updateDownload.value = UpdateDownloadState.Downloading(percent)
+                    }
+                    is DownloadProgress.Complete -> {
+                        if (appUpdater.launchInstall(progress.file)) {
+                            _updateDownload.value = UpdateDownloadState.Idle
+                            _updateAvailable.value = null
+                        } else {
+                            _updateDownload.value = UpdateDownloadState.Error(
+                                "Couldn't start the installer. Please try again."
+                            )
+                        }
+                    }
+                    is DownloadProgress.Failed ->
+                        _updateDownload.value = UpdateDownloadState.Error(progress.message)
+                }
+            }
+        }
+    }
+
+    fun openInstallPermissionSettings() {
+        appUpdater.openInstallPermissionSettings()
+        // They'll come back and tap Update again; don't strand the dialog in
+        // the permission state while they're gone.
+        _updateDownload.value = UpdateDownloadState.Idle
+    }
+
     fun dismissUpdate() {
         _updateAvailable.value = null
+        _updateDownload.value = UpdateDownloadState.Idle
+    }
+
+    /** Clears a settled download state (error / permission prompt). No-op mid-download. */
+    fun clearUpdateError() {
+        if (_updateDownload.value !is UpdateDownloadState.Downloading) {
+            _updateDownload.value = UpdateDownloadState.Idle
+        }
     }
 
     override fun onCleared() {

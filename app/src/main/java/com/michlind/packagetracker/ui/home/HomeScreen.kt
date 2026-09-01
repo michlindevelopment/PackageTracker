@@ -144,6 +144,7 @@ fun HomeScreen(
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val captchaTrackingNumber by viewModel.captchaTrackingNumber.collectAsStateWithLifecycle()
     val updateAvailable by viewModel.updateAvailable.collectAsStateWithLifecycle()
+    val updateDownload by viewModel.updateDownload.collectAsStateWithLifecycle()
     val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
     val bgImportActive by viewModel.bgImportActive.collectAsStateWithLifecycle()
     val bgImportProgress by viewModel.bgImportProgress.collectAsStateWithLifecycle()
@@ -225,29 +226,76 @@ fun HomeScreen(
     }
 
     // Update-available popup. Shown on cold launch when GitHub has a newer
-    // release than the installed version. "Update" routes to Settings —
-    // SettingsScreen already auto-runs checkForUpdates() on entry, lands on
-    // the Available state, and shows the big Update button (which handles
-    // install permission, download progress, etc.). "Later" dismisses for
-    // this app session; next cold launch re-checks.
+    // release than the installed version. "Update" downloads and installs
+    // right here — no detour through Settings. "Later" dismisses for this app
+    // session; next cold launch re-checks.
     val update = updateAvailable
     if (update != null) {
+        val downloading = updateDownload as? UpdateDownloadState.Downloading
         AlertDialog(
-            onDismissRequest = { viewModel.dismissUpdate() },
+            // Not dismissable mid-download: cancelling the dialog wouldn't
+            // cancel the transfer, it would just hide it.
+            onDismissRequest = { if (downloading == null) viewModel.dismissUpdate() },
             title = { Text("Update available") },
             text = {
-                Text("Version ${update.latestVersion} is available.")
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Version ${update.latestVersion} is available.")
+                    if (downloading != null) {
+                        LinearProgressIndicator(
+                            progress = { downloading.percent / 100f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            "Downloading… ${downloading.percent}%",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    (updateDownload as? UpdateDownloadState.Error)?.let { error ->
+                        Text(
+                            error.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.dismissUpdate()
-                    onSettingsClick()
-                }) { Text("Update") }
+                TextButton(
+                    onClick = { viewModel.startUpdate() },
+                    enabled = downloading == null
+                ) {
+                    Text(if (updateDownload is UpdateDownloadState.Error) "Retry" else "Update")
+                }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.dismissUpdate() }) {
-                    Text("Will do it later")
+                if (downloading == null) {
+                    TextButton(onClick = { viewModel.dismissUpdate() }) {
+                        Text("Will do it later")
+                    }
                 }
+            }
+        )
+    }
+
+    // The APK can't be installed until "Install unknown apps" is granted to
+    // this app, and that's a system settings toggle we can only deep-link to.
+    if (updateDownload is UpdateDownloadState.NeedsInstallPermission) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearUpdateError() },
+            title = { Text("Allow installing updates") },
+            text = {
+                Text(
+                    "To install updates in place, allow this app to install " +
+                        "unknown apps. You'll only need to do this once."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.openInstallPermissionSettings() }) {
+                    Text("Open settings")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissUpdate() }) { Text("Cancel") }
             }
         )
     }

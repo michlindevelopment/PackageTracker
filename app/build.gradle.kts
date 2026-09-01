@@ -84,31 +84,6 @@ android {
         }
     }
 
-    // Two shipping builds of the same app, same applicationId — installing one
-    // replaces the other:
-    //   full  — the normal app, reads the SMS inbox to match tracking numbers.
-    //   nosms — SMS stripped entirely. READ_SMS is not in the merged manifest
-    //           (it lives in src/full/AndroidManifest.xml), and SMS_ENABLED is
-    //           a compile-time false so R8 removes the UI and the scanner from
-    //           the release build rather than merely hiding them.
-    // The Room schema is identical across flavors: the tracking_sms table is
-    // still created, just never written to. That keeps migrations in lockstep
-    // so a user can move between the two builds without a reinstall.
-    flavorDimensions += "sms"
-    productFlavors {
-        create("full") {
-            dimension = "sms"
-            isDefault = true
-            buildConfigField("boolean", "SMS_ENABLED", "true")
-            buildConfigField("String", "UPDATE_APK_ASSET", "\"app-release.apk\"")
-        }
-        create("nosms") {
-            dimension = "sms"
-            buildConfigField("boolean", "SMS_ENABLED", "false")
-            buildConfigField("String", "UPDATE_APK_ASSET", "\"app-release-nosms.apk\"")
-        }
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -201,36 +176,37 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
-// Gradle names flavored outputs app-<flavor>-<buildType>.apk. Rename them to
-// the asset names the in-app updater looks for on the GitHub release —
-// CheckForUpdateUseCase matches BuildConfig.UPDATE_APK_ASSET exactly, so each
-// build only ever offers itself as an update.
-// Deliberately not a Copy task: Copy is skipped as NO-SOURCE when a source
-// file is missing, which would publish a release with one APK quietly absent.
+// There is one app again — the full/nosms flavor split is gone (SMS is fixed
+// by installing updates through the session-based PackageInstaller, see
+// AppUpdater), so releases carry a single APK named app-release.apk.
+//
+// Note for the record: old nosms installs will NOT see an update popup for
+// this release. Their update code matches the asset name app-release-nosms.apk
+// exactly and then gives up rather than falling back to the only APK present,
+// so they go quiet instead of offering anything. That is accepted — the one
+// person on that build is reinstalling by hand.
+//
+// Deliberately not a Copy task: Copy is skipped as NO-SOURCE when the source
+// file is missing, which would publish a release with the APK quietly absent.
 // A plain task always runs its action, so the check below can't be bypassed.
 val stageReleaseApks by tasks.registering {
     group = "publishing"
-    description = "Collects both release APKs under outputs/release-apks with their published names."
-    dependsOn("assembleFullRelease", "assembleNosmsRelease")
+    description = "Stages the release APK under outputs/release-apks with its published name."
+    dependsOn("assembleRelease")
 
     val buildDir = layout.buildDirectory
     val outDir = layout.buildDirectory.dir("outputs/release-apks")
-    val apks = mapOf(
-        "outputs/apk/full/release/app-full-release.apk" to "app-release.apk",
-        "outputs/apk/nosms/release/app-nosms-release.apk" to "app-release-nosms.apk"
-    )
+    val source = "outputs/apk/release/app-release.apk"
 
     doLast {
-        val dest = outDir.get().asFile.apply { mkdirs() }
-        apks.forEach { (from, to) ->
-            val src = buildDir.file(from).get().asFile
-            check(src.exists()) {
-                "Expected release APK not found: $src\n" +
-                    "Release signing must be configured in local.properties — an unsigned " +
-                    "build emits app-<flavor>-release-unsigned.apk instead."
-            }
-            src.copyTo(dest.resolve(to), overwrite = true)
+        val src = buildDir.file(source).get().asFile
+        check(src.exists()) {
+            "Expected release APK not found: $src\n" +
+                "Release signing must be configured in local.properties — an unsigned " +
+                "build emits app-release-unsigned.apk instead."
         }
+        val dest = outDir.get().asFile.apply { mkdirs() }
+        src.copyTo(dest.resolve("app-release.apk"), overwrite = true)
     }
 }
 
@@ -239,7 +215,7 @@ val stageReleaseApks by tasks.registering {
 // Usage: ./gradlew publishRelease
 val publishRelease by tasks.registering(Exec::class) {
     group = "publishing"
-    description = "Builds both release APKs and creates a GitHub Release with them attached."
+    description = "Builds the release APK and creates a GitHub Release with it attached."
     dependsOn(stageReleaseApks)
 
     val versionName = android.defaultConfig.versionName ?: "0.0"
@@ -250,7 +226,6 @@ val publishRelease by tasks.registering(Exec::class) {
     commandLine(
         "gh", "release", "create", tag,
         staged.file("app-release.apk").asFile.absolutePath,
-        staged.file("app-release-nosms.apk").asFile.absolutePath,
         "--title", tag,
         "--generate-notes"
     )

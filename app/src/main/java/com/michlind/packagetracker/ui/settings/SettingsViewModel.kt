@@ -192,8 +192,11 @@ class SettingsViewModel @Inject constructor(
                         UpdateUiState.Downloading(percent)
                     }
                     is DownloadProgress.Complete -> {
-                        appUpdater.launchInstall(progress.file)
-                        UpdateUiState.ReadyToInstall(progress.file)
+                        if (appUpdater.launchInstall(progress.file)) {
+                            UpdateUiState.ReadyToInstall(progress.file)
+                        } else {
+                            UpdateUiState.Error("Couldn't start the installer. Please try again.")
+                        }
                     }
                     is DownloadProgress.Failed -> UpdateUiState.Error(progress.message)
                 }

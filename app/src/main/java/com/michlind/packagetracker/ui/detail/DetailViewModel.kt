@@ -74,13 +74,12 @@ class DetailViewModel @Inject constructor(
     // Lazily re-checked snapshot of READ_SMS state. The screen calls
     // refreshSmsPermission() after the runtime permission dialog closes so
     // the SMS tab can flip from "Allow access" to the list view.
-    // Always false in the nosms flavor — hasPermission() short-circuits there.
     private val _hasSmsPermission = MutableStateFlow(smsRepository.hasPermission())
     val hasSmsPermission: StateFlow<Boolean> = _hasSmsPermission.asStateFlow()
 
     val smsList: StateFlow<List<TrackingSms>> = _trackingNumbers
         .flatMapLatest { tns ->
-            if (!BuildConfig.SMS_ENABLED || tns.isEmpty()) flowOf(emptyList())
+            if (tns.isEmpty()) flowOf(emptyList())
             else smsRepository.observeForTrackingNumbers(tns)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
