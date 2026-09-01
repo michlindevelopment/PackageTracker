@@ -160,6 +160,8 @@ fun DetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
     var showDeleteDialog by remember { mutableStateOf(false) }
+    // SMS DISABLED (1.3.1) — see AndroidManifest for why.
+    /*
     var showSmsBlockedDialog by remember { mutableStateOf(false) }
 
     val smsPermissionLauncher = rememberLauncherForActivityResult(
@@ -177,10 +179,10 @@ fun DetailScreen(
             showSmsBlockedDialog = true
         }
     }
+    */
 
     LaunchedEffect(packageId) {
         viewModel.load(packageId)
-        viewModel.refreshSmsPermission()
     }
     LaunchedEffect(deleted) { if (deleted) onBack() }
 
@@ -206,6 +208,8 @@ fun DetailScreen(
         )
     }
 
+    // SMS DISABLED (1.3.1)
+    /*
     if (showSmsBlockedDialog) {
         AlertDialog(
             onDismissRequest = { showSmsBlockedDialog = false },
@@ -237,6 +241,7 @@ fun DetailScreen(
             }
         )
     }
+    */
 
     Scaffold(
         topBar = {
@@ -326,9 +331,8 @@ fun DetailScreen(
                     paddingValues = paddingValues,
                     smsMessages = smsList,
                     hasSmsPermission = hasSmsPermission,
-                    onRequestSmsPermission = {
-                        smsPermissionLauncher.launch(Manifest.permission.READ_SMS)
-                    },
+                    // SMS DISABLED (1.3.1) — launcher is commented out above.
+                    onRequestSmsPermission = { },
                     onCopyMessage = {
                         snackbarScope.launch {
                             snackbarHostState.showSnackbar("Copied to clipboard")
@@ -376,15 +380,16 @@ private fun DetailContent(
 
     val nameTooltipState = rememberTooltipState(isPersistent = true)
     val tooltipScope = rememberCoroutineScope()
-    // Tracking and Courier are always present; SMS only in the `full` flavor.
     // The Courier tab shows the Cainiao-reported destination carrier once
     // available, but stays visible beforehand so the local-courier tracking
     // number can always be entered (and so a once-seen carrier survives a
     // reinstall that wiped the DB).
+    // SMS DISABLED (1.3.1) — smsIndex is -1 so it matches no page; restore it
+    // to 1 (courier 2, count 3) when the SMS tab comes back.
     val trackingIndex = 0
-    val smsIndex = 1
-    val courierIndex = 2
-    val tabCount = 3
+    val smsIndex = -1
+    val courierIndex = 1
+    val tabCount = 2
     val pagerState = rememberPagerState(pageCount = { tabCount })
     val tabScope = rememberCoroutineScope()
 
@@ -626,6 +631,8 @@ private fun DetailContent(
                     }
                 }
             )
+            // SMS DISABLED (1.3.1)
+            /*
             Tab(
                 selected = pagerState.currentPage == smsIndex,
                 onClick = { tabScope.launch { pagerState.animateScrollToPage(smsIndex) } },
@@ -645,6 +652,7 @@ private fun DetailContent(
                     }
                 }
             )
+            */
             Tab(
                 selected = pagerState.currentPage == courierIndex,
                 onClick = { tabScope.launch { pagerState.animateScrollToPage(courierIndex) } },
@@ -678,6 +686,8 @@ private fun DetailContent(
             ) {
                 when (page) {
                     trackingIndex -> trackingHistoryItems(events = pkg.events)
+                    // SMS DISABLED (1.3.1) — smsIndex is -1, so this never matches.
+                    /*
                     smsIndex -> smsItems(
                         trackingNumber = pkg.trackingNumber,
                         messages = smsMessages,
@@ -685,6 +695,7 @@ private fun DetailContent(
                         onRequestPermission = onRequestSmsPermission,
                         onCopyMessage = onCopyMessage
                     )
+                    */
                     courierIndex -> courierTabItems(
                         carrier = pkg.destCarrier,
                         localTrackingNumber = pkg.localTrackingNumber,

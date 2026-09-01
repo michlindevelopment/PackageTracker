@@ -87,13 +87,13 @@ class MainActivity : ComponentActivity() {
 
                 // Ask for the runtime permissions the app needs at launch:
                 //   - POST_NOTIFICATIONS (API 33+): status-change pings.
-                //   - READ_SMS: scanning the inbox for tracking-number hits.
                 // Bundling them via rememberMultiplePermissionsState avoids
                 // the "second prompt is silently suppressed" race we'd hit
                 // if MainActivity and HomeScreen each fired their own
                 // single-permission requests in quick succession.
                 val permissions = buildList {
-                    add(Manifest.permission.READ_SMS)
+                    // SMS DISABLED (1.3.1) — see AndroidManifest.
+                    // add(Manifest.permission.READ_SMS)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         add(Manifest.permission.POST_NOTIFICATIONS)
                     }

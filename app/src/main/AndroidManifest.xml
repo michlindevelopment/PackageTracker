@@ -14,10 +14,14 @@
         android:name="android.permission.POST_NOTIFICATIONS"
         android:minSdkVersion="33" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- Android's Restricted Settings lock greys this out for apps installed
-         the legacy way (tapping an APK). AppUpdater installs updates via a
-         PackageInstaller session, which is exempt, so the grant sticks. -->
+    <!-- SMS DISABLED (1.3.1) — Google Play Protect's enhanced fraud protection
+         hard-blocks the INSTALL of any sideloaded app declaring READ_SMS, with
+         no "install anyway" option. Declaring it here makes the APK
+         uninstallable for everyone who isn't using adb, so it stays commented
+         out until SMS input is reworked to something permission-free (sharing
+         a message into the app via ACTION_SEND text/plain).
     <uses-permission android:name="android.permission.READ_SMS" />
+    -->
 
     <queries>
         <intent>

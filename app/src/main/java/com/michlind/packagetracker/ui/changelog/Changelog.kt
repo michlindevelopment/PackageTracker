@@ -20,8 +20,8 @@ object Changelog {
     data class Item(val kind: Kind, val text: String)
 
     val ITEMS: List<Item> = listOf(
-        Item(Kind.BUGFIX, "Package status was wrong for some shipments — parcels already on their way could still show as \"Order Placed\"."),
-        Item(Kind.IMPROVEMENT, "Status no longer slips backwards after customs, and failed or returned deliveries are flagged properly."),
-        Item(Kind.IMPROVEMENT, "Carrier updates we don't recognise are now read for what they say instead of being ignored.")
+        Item(Kind.IMPROVEMENT, "The SMS tab is temporarily gone. Android now blocks installing any app that reads your messages unless it comes from the Play Store, so the app couldn't be installed at all with it."),
+        Item(Kind.IMPROVEMENT, "A replacement is coming: you'll be able to share a delivery message into the app and it'll attach to the right parcel."),
+        Item(Kind.IMPROVEMENT, "Updates now install without leaving the home screen — tap Update and it downloads and installs right there.")
     )
 }
