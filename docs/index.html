@@ -82,7 +82,10 @@
     font-size: 14.5px;
     margin-top: 16px;
   }
-  .note strong { display: block; margin-bottom: 4px; }
+  /* Only the leading label is a block — inline <strong> inside the body must
+     stay inline, or every emphasised phrase breaks onto its own line and
+     strands the punctuation after it. */
+  .note > strong:first-child { display: block; margin-bottom: 4px; }
   code {
     background: var(--bg);
     border: 1px solid var(--line);
@@ -177,7 +180,10 @@
       var r = await fetch('https://api.github.com/repos/michlindevelopment/PackageTracker/releases/latest');
       if (!r.ok) return;
       var rel = await r.json();
-      var apk = (rel.assets || []).filter(function (a) { return /\.apk$/.test(a.name); })[0];
+      // By exact name, not "the first .apk": releases also carry the SMS
+      // plugin, and it sorts ahead of AliTrack.apk, so the loose match
+      // advertised the 59 KB add-on's size as the app's.
+      var apk = (rel.assets || []).filter(function (a) { return a.name === 'AliTrack.apk'; })[0];
       var mb = apk ? ' · ' + (apk.size / 1048576).toFixed(1) + ' MB' : '';
       meta.textContent = 'Version ' + String(rel.tag_name || '').replace(/^v/, '') + mb;
     } catch (e) {
