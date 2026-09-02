@@ -176,37 +176,62 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
-// There is one app again — the full/nosms flavor split is gone (SMS is fixed
-// by installing updates through the session-based PackageInstaller, see
-// AppUpdater), so releases carry a single APK named app-release.apk.
+// Every release carries BOTH APKs:
 //
-// Note for the record: old nosms installs will NOT see an update popup for
-// this release. Their update code matches the asset name app-release-nosms.apk
-// exactly and then gives up rather than falling back to the only APK present,
-// so they go quiet instead of offering anything. That is accepted — the one
-// person on that build is reinstalling by hand.
+//   AliTrack.apk              the app, under its real name. The website links
+//                             here and CheckForUpdateUseCase prefers it.
+//   app-release.apk           the SAME bytes under the old name, kept only so
+//                             installs of 1.3.1 and earlier can still find an
+//                             update — their updater matches that exact string
+//                             and gives up silently if it is missing. Removable
+//                             once nobody is left on <= 1.3.1; anyone still on
+//                             an older build when it goes is stranded for good.
+//   AliTrack-SMS-Plugin.apk   the companion that holds READ_SMS. Named for
+//                             humans because users download it by hand.
 //
-// Deliberately not a Copy task: Copy is skipped as NO-SOURCE when the source
-// file is missing, which would publish a release with the APK quietly absent.
-// A plain task always runs its action, so the check below can't be bypassed.
+// They ship together rather than the plugin getting its own GitHub Release,
+// and that is a deliberate safety choice. GitHub grants "Latest" to exactly one
+// release, the in-app updater asks for /releases/latest, and the website's
+// download button resolves through /releases/latest/download/. A separate
+// plugin release would take that slot the moment it was published, and then the
+// updater would read a tag it can't parse, conclude everyone is up to date, and
+// silently stop offering updates forever. One release can't do that to itself.
+//
+// The plugin versions independently and rarely changes; re-uploading the same
+// ~60 KB each time is the price of that guarantee.
+//
+// Deliberately not a Copy task: Copy is skipped as NO-SOURCE when a source file
+// is missing, which would publish a release with an APK quietly absent. A plain
+// task always runs its action, so the checks below can't be bypassed.
 val stageReleaseApks by tasks.registering {
     group = "publishing"
-    description = "Stages the release APK under outputs/release-apks with its published name."
-    dependsOn("assembleRelease")
+    description = "Stages the app and SMS plugin APKs under outputs/release-apks."
+    dependsOn("assembleRelease", ":smsplugin:assembleRelease")
 
-    val buildDir = layout.buildDirectory
+    val appApk = layout.buildDirectory.file("outputs/apk/release/app-release.apk")
+    val pluginApk = rootProject.file("smsplugin/build/outputs/apk/release/smsplugin-release.apk")
     val outDir = layout.buildDirectory.dir("outputs/release-apks")
-    val source = "outputs/apk/release/app-release.apk"
 
     doLast {
-        val src = buildDir.file(source).get().asFile
-        check(src.exists()) {
-            "Expected release APK not found: $src\n" +
-                "Release signing must be configured in local.properties — an unsigned " +
-                "build emits app-release-unsigned.apk instead."
+        // Wipe first: the directory is never cleaned by Gradle, so APKs from
+        // older layouts (the nosms flavour, renamed assets) sit around looking
+        // publishable long after they stopped being built.
+        val dest = outDir.get().asFile
+        dest.deleteRecursively()
+        dest.mkdirs()
+        val staged = listOf(
+            appApk.get().asFile to "AliTrack.apk",
+            appApk.get().asFile to "app-release.apk",
+            pluginApk to "AliTrack-SMS-Plugin.apk"
+        )
+        staged.forEach { (src, publishedName) ->
+            check(src.exists()) {
+                "Expected release APK not found: $src\n" +
+                    "Release signing must be configured in local.properties — an unsigned " +
+                    "build emits *-release-unsigned.apk instead."
+            }
+            src.copyTo(dest.resolve(publishedName), overwrite = true)
         }
-        val dest = outDir.get().asFile.apply { mkdirs() }
-        src.copyTo(dest.resolve("app-release.apk"), overwrite = true)
     }
 }
 
@@ -215,7 +240,7 @@ val stageReleaseApks by tasks.registering {
 // Usage: ./gradlew publishRelease
 val publishRelease by tasks.registering(Exec::class) {
     group = "publishing"
-    description = "Builds the release APK and creates a GitHub Release with it attached."
+    description = "Builds both release APKs and creates a GitHub Release with them attached."
     dependsOn(stageReleaseApks)
 
     val versionName = android.defaultConfig.versionName ?: "0.0"
@@ -225,7 +250,9 @@ val publishRelease by tasks.registering(Exec::class) {
     workingDir = rootDir
     commandLine(
         "gh", "release", "create", tag,
+        staged.file("AliTrack.apk").asFile.absolutePath,
         staged.file("app-release.apk").asFile.absolutePath,
+        staged.file("AliTrack-SMS-Plugin.apk").asFile.absolutePath,
         "--title", tag,
         "--generate-notes"
     )

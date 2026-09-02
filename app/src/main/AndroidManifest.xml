@@ -28,6 +28,14 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="application/vnd.android.package-archive" />
         </intent>
+        <!-- Without these the SMS helper is invisible to us on Android 11+:
+             resolveContentProvider() and getLaunchIntentForPackage() both
+             return null for packages outside our visibility set, whether or
+             not they are installed, so the app would insist the helper isn't
+             there while it sits in the launcher. Both ids are listed because
+             debug builds of the pair carry a .debug suffix. -->
+        <package android:name="com.michlind.packagetracker.smsplugin" />
+        <package android:name="com.michlind.packagetracker.smsplugin.debug" />
     </queries>
 
     <uses-feature

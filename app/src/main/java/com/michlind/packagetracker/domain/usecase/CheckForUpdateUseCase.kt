@@ -29,15 +29,20 @@ class CheckForUpdateUseCase @Inject constructor(
     }
 
     /**
-     * Releases carry a single APK named [RELEASE_APK_ASSET]. The fallback to
-     * "the only .apk on the release" covers releases whose asset was named
-     * differently — historically the flavored app-full-release.apk — so a
-     * rename doesn't silently stop the update prompt from ever appearing.
+     * Pick the app's own APK off the release, by exact name, in preference
+     * order. Never by pattern: a release also carries the SMS plugin, and
+     * "the .apk on the release" would happily hand the user a 59 KB plugin as
+     * an app update.
+     *
+     * Two names are accepted while the rename settles — [APP_ASSET] is what
+     * releases lead with now, [LEGACY_APP_ASSET] is the same bytes under the
+     * old name so installs of 1.3.1 and earlier can still find themselves an
+     * update. The legacy entry can go once nobody is running <= 1.3.1.
      */
-    private fun pickApkForThisBuild(assets: List<GitHubAsset>): GitHubAsset? {
-        assets.firstOrNull { it.name == RELEASE_APK_ASSET }?.let { return it }
-        return assets.filter { it.name.endsWith(".apk") }.singleOrNull()
-    }
+    private fun pickApkForThisBuild(assets: List<GitHubAsset>): GitHubAsset? =
+        APP_ASSET_NAMES.firstNotNullOfOrNull { wanted ->
+            assets.firstOrNull { it.name == wanted }
+        }
 
     // Compare semantic version strings like "1.0.10" > "1.0.9". Splits on '.',
     // pads to equal length with zeros, and compares each segment as an int.
@@ -57,7 +62,13 @@ class CheckForUpdateUseCase @Inject constructor(
         const val REPO_OWNER = "michlindevelopment"
         const val REPO_NAME = "PackageTracker"
 
-        /** Asset name produced by the `stageReleaseApks` Gradle task. */
-        const val RELEASE_APK_ASSET = "app-release.apk"
+        /** Current asset name, produced by the `stageReleaseApks` Gradle task. */
+        const val APP_ASSET = "AliTrack.apk"
+
+        /** Pre-1.3.2 name, still published as a duplicate for older installs. */
+        const val LEGACY_APP_ASSET = "app-release.apk"
+
+        /** Checked in order; first match wins. */
+        val APP_ASSET_NAMES = listOf(APP_ASSET, LEGACY_APP_ASSET)
     }
 }

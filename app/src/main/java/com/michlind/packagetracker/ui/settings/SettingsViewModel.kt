@@ -1,9 +1,11 @@
 package com.michlind.packagetracker.ui.settings
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebStorage
+import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.michlind.packagetracker.BuildConfig
@@ -13,6 +15,8 @@ import com.michlind.packagetracker.data.preferences.NotificationPreferenceReposi
 import com.michlind.packagetracker.data.preferences.SyncOnResumePreferenceRepository
 import com.michlind.packagetracker.data.preferences.ThemePreferenceRepository
 import com.michlind.packagetracker.data.updater.AppUpdater
+import com.michlind.packagetracker.data.repository.SmsPluginState
+import com.michlind.packagetracker.data.repository.SmsRepository
 import com.michlind.packagetracker.data.updater.DownloadProgress
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.ThemePreference
@@ -56,8 +60,31 @@ class SettingsViewModel @Inject constructor(
     private val packageRepository: PackageRepository,
     private val checkForUpdate: CheckForUpdateUseCase,
     private val appUpdater: AppUpdater,
+    private val smsRepository: SmsRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
+
+    private val _smsPluginState = MutableStateFlow(smsRepository.pluginState())
+    val smsPluginState: StateFlow<SmsPluginState> = _smsPluginState.asStateFlow()
+
+    /** Re-resolve after the user has been out to the helper and come back. */
+    fun refreshSmsPluginState() {
+        _smsPluginState.value = smsRepository.pluginState()
+    }
+
+    /**
+     * Open the helper if it's installed, otherwise send the user to the release
+     * page to fetch it. Deliberately not an in-app download: the helper declares
+     * READ_SMS, so its install is the one Play Protect will question, and that's
+     * better met in the browser with the release notes in view than behind a
+     * progress bar in here.
+     */
+    fun openSmsHelper() {
+        val pkg = SMS_PLUGIN_PACKAGE + if (BuildConfig.DEBUG) ".debug" else ""
+        val launch = context.packageManager.getLaunchIntentForPackage(pkg)
+        val intent = launch ?: Intent(Intent.ACTION_VIEW, SMS_PLUGIN_PAGE.toUri())
+        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
     val theme: StateFlow<ThemePreference> = themeRepo.theme
 
     val toShipPages: StateFlow<Int> = importPrefs.toShipPages
@@ -256,6 +283,8 @@ class SettingsViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "Settings"
+        const val SMS_PLUGIN_PACKAGE = "com.michlind.packagetracker.smsplugin"
+        const val SMS_PLUGIN_PAGE = "https://michlindevelopment.github.io/PackageTracker/"
         const val MOCK_NAME_PREFIX = "Mock — "
         const val MOCK_TN_PREFIX = "MOCK"
         const val HOUR_MS = 60L * 60 * 1000

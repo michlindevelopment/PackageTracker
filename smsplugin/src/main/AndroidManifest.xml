@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The whole reason this APK exists. Declaring READ_SMS is what makes an
+         install fall foul of Play Protect's enhanced fraud protection, so it
+         lives here and never in the main app. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+
+        <activity
+            android:name=".PluginActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- exported so the main app (a different UID) can query it. There is
+             deliberately no android:permission here: a manifest signature
+             permission is only granted at install time of the *requesting* app,
+             so if the main app were installed before this plugin it would never
+             receive it. TrackingSmsProvider checks the caller's signature at
+             runtime instead, which has no such ordering trap. -->
+        <provider
+            android:name=".TrackingSmsProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="true" />
+
+    </application>
+
+</manifest>

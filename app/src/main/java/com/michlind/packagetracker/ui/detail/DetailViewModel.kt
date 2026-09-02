@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.michlind.packagetracker.BuildConfig
+import com.michlind.packagetracker.data.repository.SmsPluginState
 import com.michlind.packagetracker.data.repository.SmsRepository
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.domain.model.TrackingSms
@@ -72,10 +73,11 @@ class DetailViewModel @Inject constructor(
     )
 
     // Lazily re-checked snapshot of READ_SMS state. The screen calls
-    // refreshSmsPermission() after the runtime permission dialog closes so
-    // the SMS tab can flip from "Allow access" to the list view.
-    private val _hasSmsPermission = MutableStateFlow(smsRepository.hasPermission())
-    val hasSmsPermission: StateFlow<Boolean> = _hasSmsPermission.asStateFlow()
+    // refreshSmsPermission() when the screen resumes, so the SMS tab flips from
+    // "install the plugin" / "grant it access" to the list once the user has
+    // been out to the plugin and back.
+    private val _smsPluginState = MutableStateFlow(smsRepository.pluginState())
+    val smsPluginState: StateFlow<SmsPluginState> = _smsPluginState.asStateFlow()
 
     val smsList: StateFlow<List<TrackingSms>> = _trackingNumbers
         .flatMapLatest { tns ->
@@ -125,19 +127,21 @@ class DetailViewModel @Inject constructor(
                     pkg.localTrackingNumber?.takeIf { it.isNotBlank() }
                 )
             }
-            if (normalized != null && _hasSmsPermission.value) {
+            if (normalized != null) {
                 smsRepository.scanForTrackingNumbers(listOf(normalized))
             }
         }
     }
 
+    /** Re-resolve the plugin. Cheap, and the state can change while we're
+     *  backgrounded (user installs the plugin or grants it SMS access). */
     fun refreshSmsPermission() {
-        _hasSmsPermission.value = smsRepository.hasPermission()
+        _smsPluginState.value = smsRepository.pluginState()
     }
 
     /** Targeted scan for the currently-loaded TN(s) — Cainiao TN plus the
-     *  local-courier TN if set. Used after the user grants READ_SMS so the
-     *  SMS tab populates without waiting for the next sync. */
+     *  local-courier TN if set. Used after the user comes back from the plugin
+     *  so the SMS tab populates without waiting for the next sync. */
     fun scanSmsForCurrent() {
         val tns = _trackingNumbers.value
         if (tns.isEmpty()) return

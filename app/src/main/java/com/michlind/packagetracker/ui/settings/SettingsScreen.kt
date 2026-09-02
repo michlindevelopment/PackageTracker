@@ -17,6 +17,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DarkMode
@@ -49,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,19 +64,23 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.michlind.packagetracker.data.repository.SmsPluginState
 import com.michlind.packagetracker.domain.model.ThemePreference
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onContributorsClick: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val theme by viewModel.theme.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+    val smsPluginState by viewModel.smsPluginState.collectAsStateWithLifecycle()
     val isAliConnected by viewModel.isAliConnected.collectAsStateWithLifecycle()
     val toShipPages by viewModel.toShipPages.collectAsStateWithLifecycle()
     val shippedPages by viewModel.shippedPages.collectAsStateWithLifecycle()
@@ -90,6 +96,18 @@ fun SettingsScreen(
     // have logged in via the import flow since they last visited Settings.
     LaunchedEffect(Unit) {
         viewModel.refreshAliConnection()
+    }
+
+    // The helper is installed and granted outside this app, so re-resolve on
+    // every resume: the user leaves to fetch it or grant it and comes straight
+    // back here expecting the section to have moved on.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshSmsPluginState()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(message) {
@@ -447,36 +465,93 @@ fun SettingsScreen(
             HorizontalDivider()
             Spacer(Modifier.height(8.dp))
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .selectable(
-                        selected = false,
-                        onClick = onContributorsClick,
-                        role = Role.Button
-                    )
-                    .padding(vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.People,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Text(
-                    text = "Contributors",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
-            }
+            SmsHelperSection(
+                state = smsPluginState,
+                onOpenHelper = { viewModel.openSmsHelper() }
+            )
         }
+    }
+}
+
+/**
+ * Explains the companion SMS helper and offers the one action that moves it
+ * forward. This lives in Settings rather than in the parcel view because it's a
+ * once-ever setup step, and because the SMS tab doesn't exist at all until the
+ * helper is installed.
+ */
+@Composable
+private fun SmsHelperSection(
+    state: SmsPluginState,
+    onOpenHelper: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.Message,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
+        Text(
+            text = "SMS matching",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium
+        )
+    }
+
+    Text(
+        text = when (state) {
+            SmsPluginState.READY ->
+                "Delivery messages are being matched to your parcels. Each " +
+                    "parcel has an SMS tab showing the messages that mention it."
+            SmsPluginState.NOT_GRANTED ->
+                "The plugin is installed but hasn't been given access to your " +
+                    "messages yet. Open it and tap Grant SMS access."
+            SmsPluginState.NOT_INSTALLED ->
+                "AliTrack can show the delivery messages your couriers send, " +
+                    "matched to the right parcel.\n\n" +
+                    "Android won't let an app that's installed outside the Play " +
+                    "Store read messages — the install is blocked outright. So " +
+                    "the message reading lives in a separate small app, " +
+                    "\"AliTrack SMS Plugin\". Install it once and AliTrack can " +
+                    "ask it for delivery messages without ever touching your " +
+                    "inbox itself.\n\n" +
+                    "It's optional. Everything else works without it."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+    )
+
+    Spacer(Modifier.height(12.dp))
+
+    when (state) {
+        SmsPluginState.READY -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = "Plugin active",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onOpenHelper) { Text("Open plugin") }
+        }
+
+        SmsPluginState.NOT_GRANTED ->
+            Button(onClick = onOpenHelper) { Text("Open plugin") }
+
+        SmsPluginState.NOT_INSTALLED ->
+            Button(onClick = onOpenHelper) { Text("Get the SMS plugin") }
     }
 }
 

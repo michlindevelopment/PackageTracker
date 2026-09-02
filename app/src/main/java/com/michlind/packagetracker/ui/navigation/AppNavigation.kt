@@ -19,7 +19,6 @@ import com.michlind.packagetracker.ui.add.AddEditScreen
 import com.michlind.packagetracker.ui.alilogin.AliLoginScreen
 import com.michlind.packagetracker.ui.attach.AttachImageSheet
 import com.michlind.packagetracker.ui.captcha.CaptchaScreen
-import com.michlind.packagetracker.ui.contributors.ContributorsScreen
 import com.michlind.packagetracker.ui.debug.RawResponseScreen
 import com.michlind.packagetracker.ui.detail.DetailScreen
 import com.michlind.packagetracker.ui.home.HomeScreen
@@ -116,15 +115,6 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onBack = { navController.popBackStack() },
-                onContributorsClick = {
-                    navController.navigate(Screen.Contributors.route)
-                }
-            )
-        }
-
-        composable(Screen.Contributors.route) {
-            ContributorsScreen(
                 onBack = { navController.popBackStack() }
             )
         }

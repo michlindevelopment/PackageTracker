@@ -79,6 +79,7 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -122,12 +123,16 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.michlind.packagetracker.BuildConfig
 import com.michlind.packagetracker.R
+import com.michlind.packagetracker.data.repository.SmsPluginState
 import com.michlind.packagetracker.domain.model.DestCarrierInfo
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
@@ -136,6 +141,30 @@ import com.michlind.packagetracker.ui.components.SkeletonDetailHeader
 import com.michlind.packagetracker.ui.components.TimelineItem
 import com.michlind.packagetracker.ui.components.colorAndIcon
 import com.michlind.packagetracker.util.DateUtils
+
+/** Package name of the companion SMS helper — see SmsRepository for the pairing. */
+private const val SMS_PLUGIN_PACKAGE = "com.michlind.packagetracker.smsplugin"
+
+/**
+ * Open the SMS helper if it's installed, otherwise send the user to the release
+ * page to fetch it. Not an in-app download: the helper declares READ_SMS, so its
+ * install is the one Play Protect will question, and that's better faced in the
+ * browser with the release notes visible than behind a progress bar in here.
+ */
+private fun openSmsPlugin(context: android.content.Context) {
+    val pkg = SMS_PLUGIN_PACKAGE + if (BuildConfig.DEBUG) ".debug" else ""
+    val launch = context.packageManager.getLaunchIntentForPackage(pkg)
+    if (launch != null) {
+        context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return
+    }
+    context.startActivity(
+        Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("https://michlindevelopment.github.io/PackageTracker/")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
+}
 
 private val STAGE_LABELS = listOf(
     "Order\nPlaced", "Shipped", "Export\nCustoms", "In Flight", "Import\nCustoms", "Delivery", "Delivered"
@@ -154,32 +183,26 @@ fun DetailScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
     val smsList by viewModel.smsList.collectAsStateWithLifecycle()
-    val hasSmsPermission by viewModel.hasSmsPermission.collectAsStateWithLifecycle()
+    val smsPluginState by viewModel.smsPluginState.collectAsStateWithLifecycle()
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
     var showDeleteDialog by remember { mutableStateOf(false) }
-    // SMS DISABLED (1.3.1) — see AndroidManifest for why.
-    /*
-    var showSmsBlockedDialog by remember { mutableStateOf(false) }
-
-    val smsPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        viewModel.refreshSmsPermission()
-        if (granted) {
-            // Don't make the user wait for the next syncStatus() to see
-            // anything — kick off a one-shot scan for just this TN.
-            viewModel.scanSmsForCurrent()
-        } else {
-            // Sideloaded APKs hit Android's "restricted settings" lock that
-            // greys out the Allow toggle in App info; surface the recovery
-            // steps + a deep-link to App info so the user isn't stranded.
-            showSmsBlockedDialog = true
+    // Re-resolve the plugin whenever this screen comes back to the foreground:
+    // the user leaves to install it or to grant it SMS access, and should
+    // return to a populated tab rather than the same prompt.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshSmsPermission()
+                viewModel.scanSmsForCurrent()
+            }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    */
 
     LaunchedEffect(packageId) {
         viewModel.load(packageId)
@@ -208,40 +231,6 @@ fun DetailScreen(
         )
     }
 
-    // SMS DISABLED (1.3.1)
-    /*
-    if (showSmsBlockedDialog) {
-        AlertDialog(
-            onDismissRequest = { showSmsBlockedDialog = false },
-            title = { Text("SMS access is blocked") },
-            text = {
-                Text(
-                    "Android blocks SMS access for sideloaded apps by default. " +
-                        "To enable it:\n\n" +
-                        "1. Tap \"Open App info\" below\n" +
-                        "2. Tap the ⋮ menu (top-right)\n" +
-                        "3. Tap \"Allow restricted settings\"\n" +
-                        "4. Open Permissions → SMS → Allow"
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showSmsBlockedDialog = false
-                    val intent = Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.fromParts("package", context.packageName, null)
-                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                }) { Text("Open App info") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSmsBlockedDialog = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
-        )
-    }
-    */
 
     Scaffold(
         topBar = {
@@ -330,9 +319,8 @@ fun DetailScreen(
                     isRefreshing = isRefreshing,
                     paddingValues = paddingValues,
                     smsMessages = smsList,
-                    hasSmsPermission = hasSmsPermission,
-                    // SMS DISABLED (1.3.1) — launcher is commented out above.
-                    onRequestSmsPermission = { },
+                    smsPluginState = smsPluginState,
+                    onOpenSmsPlugin = { openSmsPlugin(context) },
                     onCopyMessage = {
                         snackbarScope.launch {
                             snackbarHostState.showSnackbar("Copied to clipboard")
@@ -358,8 +346,8 @@ private fun DetailContent(
     isRefreshing: Boolean,
     paddingValues: PaddingValues,
     smsMessages: List<TrackingSms>,
-    hasSmsPermission: Boolean,
-    onRequestSmsPermission: () -> Unit,
+    smsPluginState: SmsPluginState,
+    onOpenSmsPlugin: () -> Unit,
     onCopyMessage: () -> Unit,
     onSaveLocalTrackingNumber: (String) -> Unit,
     onClearLocalTrackingNumber: () -> Unit,
@@ -384,12 +372,15 @@ private fun DetailContent(
     // available, but stays visible beforehand so the local-courier tracking
     // number can always be entered (and so a once-seen carrier survives a
     // reinstall that wiped the DB).
-    // SMS DISABLED (1.3.1) — smsIndex is -1 so it matches no page; restore it
-    // to 1 (courier 2, count 3) when the SMS tab comes back.
+    // The SMS tab only exists once the helper APK is installed — with no helper
+    // there is nothing the tab could ever show, and no way to act from here
+    // (getting the helper lives in Settings). NOT_GRANTED still shows it: the
+    // helper is there, it just needs one more tap, and the tab says so.
+    val smsAvailable = smsPluginState != SmsPluginState.NOT_INSTALLED
     val trackingIndex = 0
-    val smsIndex = -1
-    val courierIndex = 1
-    val tabCount = 2
+    val smsIndex = if (smsAvailable) 1 else -1
+    val courierIndex = if (smsAvailable) 2 else 1
+    val tabCount = if (smsAvailable) 3 else 2
     val pagerState = rememberPagerState(pageCount = { tabCount })
     val tabScope = rememberCoroutineScope()
 
@@ -631,8 +622,7 @@ private fun DetailContent(
                     }
                 }
             )
-            // SMS DISABLED (1.3.1)
-            /*
+            if (smsAvailable) {
             Tab(
                 selected = pagerState.currentPage == smsIndex,
                 onClick = { tabScope.launch { pagerState.animateScrollToPage(smsIndex) } },
@@ -652,7 +642,7 @@ private fun DetailContent(
                     }
                 }
             )
-            */
+            }
             Tab(
                 selected = pagerState.currentPage == courierIndex,
                 onClick = { tabScope.launch { pagerState.animateScrollToPage(courierIndex) } },
@@ -686,16 +676,13 @@ private fun DetailContent(
             ) {
                 when (page) {
                     trackingIndex -> trackingHistoryItems(events = pkg.events)
-                    // SMS DISABLED (1.3.1) — smsIndex is -1, so this never matches.
-                    /*
                     smsIndex -> smsItems(
                         trackingNumber = pkg.trackingNumber,
                         messages = smsMessages,
-                        hasPermission = hasSmsPermission,
-                        onRequestPermission = onRequestSmsPermission,
+                        pluginState = smsPluginState,
+                        onOpenPlugin = onOpenSmsPlugin,
                         onCopyMessage = onCopyMessage
                     )
-                    */
                     courierIndex -> courierTabItems(
                         carrier = pkg.destCarrier,
                         localTrackingNumber = pkg.localTrackingNumber,
@@ -979,11 +966,13 @@ private fun LazyListScope.courierTabItems(
 private fun LazyListScope.smsItems(
     trackingNumber: String,
     messages: List<TrackingSms>,
-    hasPermission: Boolean,
-    onRequestPermission: () -> Unit,
+    pluginState: SmsPluginState,
+    onOpenPlugin: () -> Unit,
     onCopyMessage: () -> Unit
 ) {
-    if (!hasPermission) {
+    // Only NOT_GRANTED can reach here — the tab isn't built at all when the
+    // helper is missing, and getting it is a Settings concern.
+    if (pluginState != SmsPluginState.READY) {
         item {
             Column(
                 modifier = Modifier
@@ -999,20 +988,21 @@ private fun LazyListScope.smsItems(
                 )
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "Allow SMS access",
+                    text = "Finish setting up SMS access",
                     style = MaterialTheme.typography.titleMedium,
                     textAlign = TextAlign.Center
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Grant SMS read access so we can match incoming " +
-                        "carrier notifications to this tracking number.",
+                    text = "The AliTrack SMS Plugin is installed but hasn't " +
+                        "been given access to your messages yet. Open it and " +
+                        "tap Grant SMS access.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                     textAlign = TextAlign.Center
                 )
                 Spacer(Modifier.height(20.dp))
-                Button(onClick = onRequestPermission) { Text("Allow access") }
+                Button(onClick = onOpenPlugin) { Text("Open plugin") }
             }
         }
         return
