@@ -137,21 +137,28 @@
     <p style="margin:0 0 14px">
       AliTrack can show the delivery messages your couriers send, attached to
       the right parcel. Android won't let an app installed outside the Play
-      Store read messages, so that part lives in a separate small add-on.
-      Install it once and forget about it — everything else works without it.
+      Store read messages, so that part lives in a separate 59&nbsp;KB add-on.
+      Everything else works without it.
     </p>
-    <a class="download" style="font-size:16px;padding:13px"
-       href="https://github.com/michlindevelopment/PackageTracker/releases/latest/download/AliTrack-SMS-Plugin.apk">
-      Download SMS Plugin (59 KB)
-    </a>
-    <div class="note" style="margin-top:14px">
-      <strong>Expect a warning on this one</strong>
-      Because it reads messages, Android will push back harder than it does for
-      the main app. If you get "App blocked", open Play Store → profile →
-      Play Protect → ⚙ → turn off "Scan apps with Play Protect", install, then
-      turn it back on. After installing, open <strong>AliTrack SMS Plugin</strong>
-      once and tap <strong>Grant SMS access</strong>.
+    <p style="margin:0 0 14px">
+      <strong>Don't download it here.</strong> Install AliTrack first, then open
+      <strong>Settings → SMS matching → Install SMS plugin</strong> and it will
+      fetch and install the add-on for you. That route avoids the warnings you'd
+      get downloading it in a browser.
+    </p>
+    <div class="note">
+      <strong>One extra step Android requires</strong>
+      After the add-on installs, open <strong>AliTrack SMS Plugin</strong> and
+      tap Grant SMS access. Android will refuse the first time — that's normal
+      for apps outside the Play Store. The add-on then shows you the fix:
+      App&nbsp;info → <code>⋮</code> → Allow restricted settings → Permissions →
+      SMS → Allow. Once only.
     </div>
+    <p style="margin:14px 0 0;font-size:14px;color:var(--muted)">
+      If the in-app install fails, you can
+      <a href="https://github.com/michlindevelopment/PackageTracker/releases/latest/download/AliTrack-SMS-Plugin.apk">download
+      the add-on directly</a> — expect Android to push back harder on that route.
+    </p>
   </div>
 
   <footer>

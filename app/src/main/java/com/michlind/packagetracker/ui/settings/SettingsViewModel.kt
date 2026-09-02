@@ -39,6 +39,13 @@ import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 
+/** Progress of installing the SMS plugin from inside Settings. */
+sealed interface PluginInstallState {
+    object Idle : PluginInstallState
+    data class Downloading(val percent: Int) : PluginInstallState
+    data class Error(val message: String) : PluginInstallState
+}
+
 sealed interface UpdateUiState {
     object Idle : UpdateUiState
     object Checking : UpdateUiState
@@ -72,18 +79,69 @@ class SettingsViewModel @Inject constructor(
         _smsPluginState.value = smsRepository.pluginState()
     }
 
-    /**
-     * Open the helper if it's installed, otherwise send the user to the release
-     * page to fetch it. Deliberately not an in-app download: the helper declares
-     * READ_SMS, so its install is the one Play Protect will question, and that's
-     * better met in the browser with the release notes in view than behind a
-     * progress bar in here.
-     */
+    private val _pluginInstall = MutableStateFlow<PluginInstallState>(PluginInstallState.Idle)
+    val pluginInstall: StateFlow<PluginInstallState> = _pluginInstall.asStateFlow()
+
+    /** Open the already-installed plugin. Only called once it exists. */
     fun openSmsHelper() {
         val pkg = SMS_PLUGIN_PACKAGE + if (BuildConfig.DEBUG) ".debug" else ""
         val launch = context.packageManager.getLaunchIntentForPackage(pkg)
         val intent = launch ?: Intent(Intent.ACTION_VIEW, SMS_PLUGIN_PAGE.toUri())
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /**
+     * Download the SMS plugin and install it from here, through the same
+     * PackageInstaller session the app uses to update itself.
+     *
+     * The session is the point. An APK the user downloads in a browser and taps
+     * is installed by the system package installer, which puts it behind
+     * Android's Restricted Settings lock — and for the plugin that lock is
+     * fatal, because the one permission it exists to hold is exactly the kind
+     * the lock blocks. Its SMS toggle then refuses with "app was denied
+     * access", recoverable only through a hidden ⋮ menu. Installing it from
+     * here sidesteps that entirely.
+     *
+     * Play Protect is a separate gate and may still object; that one we can't
+     * do anything about from in here.
+     */
+    fun installSmsPlugin() {
+        if (_pluginInstall.value is PluginInstallState.Downloading) return
+        if (!appUpdater.canInstallApks()) {
+            _updateState.value = UpdateUiState.NeedsInstallPermission
+            return
+        }
+        viewModelScope.launch {
+            appUpdater.download(SMS_PLUGIN_URL, SMS_PLUGIN_FILE).collect { progress ->
+                when (progress) {
+                    is DownloadProgress.Progress -> {
+                        val percent = if (progress.total > 0) {
+                            ((progress.bytesRead * 100) / progress.total).toInt()
+                        } else 0
+                        _pluginInstall.value = PluginInstallState.Downloading(percent)
+                    }
+                    is DownloadProgress.Complete -> {
+                        val started = appUpdater.launchInstall(
+                            progress.file,
+                            packageName = SMS_PLUGIN_PACKAGE
+                        )
+                        _pluginInstall.value = if (started) {
+                            PluginInstallState.Idle
+                        } else {
+                            PluginInstallState.Error("Couldn't start the installer. Please try again.")
+                        }
+                    }
+                    is DownloadProgress.Failed ->
+                        _pluginInstall.value = PluginInstallState.Error(progress.message)
+                }
+            }
+        }
+    }
+
+    fun clearPluginInstallError() {
+        if (_pluginInstall.value is PluginInstallState.Error) {
+            _pluginInstall.value = PluginInstallState.Idle
+        }
     }
     val theme: StateFlow<ThemePreference> = themeRepo.theme
 
@@ -285,6 +343,12 @@ class SettingsViewModel @Inject constructor(
         const val TAG = "Settings"
         const val SMS_PLUGIN_PACKAGE = "com.michlind.packagetracker.smsplugin"
         const val SMS_PLUGIN_PAGE = "https://michlindevelopment.github.io/PackageTracker/"
+        const val SMS_PLUGIN_FILE = "AliTrack-SMS-Plugin.apk"
+
+        /** Permanent GitHub redirect to the newest release's plugin asset. */
+        const val SMS_PLUGIN_URL =
+            "https://github.com/michlindevelopment/PackageTracker/releases/latest/download/" +
+                SMS_PLUGIN_FILE
         const val MOCK_NAME_PREFIX = "Mock — "
         const val MOCK_TN_PREFIX = "MOCK"
         const val HOUR_MS = 60L * 60 * 1000

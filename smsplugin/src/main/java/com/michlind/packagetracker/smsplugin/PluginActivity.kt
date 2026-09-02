@@ -18,6 +18,20 @@ import android.widget.TextView
 private const val REQUEST_READ_SMS = 1
 
 /**
+ * Android blocks SMS access for apps that didn't come from an app store, and
+ * the only way through is a menu the system deliberately doesn't advertise.
+ * Spelling it out beats leaving people at a switch that refuses to move.
+ */
+private const val BLOCKED_STEPS =
+    "Android blocked it.\n\n" +
+        "Apps installed outside the Play Store need one extra approval:\n\n" +
+        "1. Tap \"Open App info\" below\n" +
+        "2. Tap ⋮ (top-right)\n" +
+        "3. Tap \"Allow restricted settings\"\n" +
+        "4. Permissions → SMS → Allow\n\n" +
+        "You only do this once."
+
+/**
  * The plugin's entire UI: say whether SMS access is granted, and offer the one
  * button that fixes it. Everything else about this app happens in
  * [TrackingSmsProvider], invisibly, at the main app's request.
@@ -30,6 +44,9 @@ class PluginActivity : Activity() {
 
     private lateinit var status: TextView
     private lateinit var action: Button
+
+    /** Set once a permission request comes back refused — see [render]. */
+    private var wasBlocked = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,28 +99,36 @@ class PluginActivity : Activity() {
         checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
 
     private fun render() {
-        if (granted()) {
-            status.text = "✓ SMS access granted"
-            status.setTextColor(Color.parseColor("#2e7d32"))
-            action.text = "Open app settings"
-        } else {
-            status.text = "SMS access not granted"
-            status.setTextColor(Color.parseColor("#c62828"))
-            action.text = "Grant SMS access"
+        when {
+            granted() -> {
+                status.text = "✓ SMS access granted\n\nNothing else to do here."
+                status.setTextColor(Color.parseColor("#2e7d32"))
+                action.text = "Open app settings"
+            }
+            // Android refused the request without the user ever seeing a dialog.
+            // That is the Restricted Settings lock, and no amount of re-asking
+            // clears it — it can only be lifted from App info, so stop offering
+            // a button that cannot work and give the actual steps instead.
+            wasBlocked -> {
+                status.text = BLOCKED_STEPS
+                status.setTextColor(Color.parseColor("#c62828"))
+                action.text = "Open App info"
+            }
+            else -> {
+                status.text = "SMS access not granted"
+                status.setTextColor(Color.parseColor("#c62828"))
+                action.text = "Grant SMS access"
+            }
         }
     }
 
     private fun onActionClicked() {
-        if (granted()) {
+        // Granted or blocked, App info is the only useful destination; only a
+        // fresh, never-refused state is worth spending a permission request on.
+        if (granted() || wasBlocked) {
             openAppInfo()
             return
         }
-        // shouldShowRequestPermissionRationale() goes false once the user has
-        // permanently denied — and it is also false on a first ask, so only
-        // trust it after at least one request. Simplest correct behaviour: ask,
-        // and if the system returns instantly without a dialog (the toggle is
-        // locked by Restricted Settings, or permanently denied), send them to
-        // App info where both are fixable.
         requestPermissions(arrayOf(Manifest.permission.READ_SMS), REQUEST_READ_SMS)
     }
 
@@ -114,11 +139,10 @@ class PluginActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQUEST_READ_SMS) return
-        render()
         if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) {
-            status.text = "Blocked. Open App info → ⋮ → Allow restricted " +
-                "settings, then Permissions → SMS → Allow."
+            wasBlocked = true
         }
+        render()
     }
 
     private fun openAppInfo() {

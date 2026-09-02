@@ -20,8 +20,8 @@ object Changelog {
     data class Item(val kind: Kind, val text: String)
 
     val ITEMS: List<Item> = listOf(
-        Item(Kind.IMPROVEMENT, "The SMS tab is temporarily gone. Android now blocks installing any app that reads your messages unless it comes from the Play Store, so the app couldn't be installed at all with it."),
-        Item(Kind.IMPROVEMENT, "A replacement is coming: you'll be able to share a delivery message into the app and it'll attach to the right parcel."),
-        Item(Kind.IMPROVEMENT, "Updates now install without leaving the home screen — tap Update and it downloads and installs right there.")
+        Item(Kind.NEW, "SMS matching is back. Delivery messages show up on each parcel again — set it up in Settings → SMS matching."),
+        Item(Kind.NEW, "It now works through a tiny separate add-on that AliTrack installs for you, so AliTrack itself never needs permission to read your messages."),
+        Item(Kind.IMPROVEMENT, "Updates install without leaving the home screen — tap Update and it downloads and installs right there.")
     )
 }

@@ -48,8 +48,12 @@ class AppUpdater @Inject constructor(
         context.startActivity(intent)
     }
 
-    fun download(url: String): Flow<DownloadProgress> = flow {
-        val target = File(context.cacheDir, "updates/app-update.apk").apply {
+    /**
+     * Download an APK to the cache. [fileName] keeps concurrent downloads of
+     * different APKs (the app itself vs. the SMS plugin) off each other's file.
+     */
+    fun download(url: String, fileName: String = "app-update.apk"): Flow<DownloadProgress> = flow {
+        val target = File(context.cacheDir, "updates/$fileName").apply {
             parentFile?.mkdirs()
             if (exists()) delete()
         }
@@ -97,17 +101,24 @@ class AppUpdater @Inject constructor(
      * Settings. Committing a session makes the app its own installer of record
      * and keeps the exemption across updates.
      *
-     * Note this only covers *updates*. A first install downloaded in a browser
-     * still arrives via the legacy path and still hits the lock once; the
-     * recovery flow for that is the "Allow restricted settings" dialog in
-     * DetailScreen.
+     * Note this only covers APKs *we* install. A first install downloaded in a
+     * browser still arrives via the legacy path and still hits the lock once.
+     *
+     * [packageName] is the id of the APK being installed — it defaults to this
+     * app (self-update) but is set explicitly when installing the SMS plugin,
+     * which is a different package. That case is the whole reason this is a
+     * parameter: the plugin is the APK that actually needs READ_SMS grantable,
+     * and installing it from here is what keeps it out of the lock.
      */
-    suspend fun launchInstall(file: File): Boolean = withContext(Dispatchers.IO) {
+    suspend fun launchInstall(
+        file: File,
+        packageName: String = context.packageName
+    ): Boolean = withContext(Dispatchers.IO) {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(
             PackageInstaller.SessionParams.MODE_FULL_INSTALL
         ).apply {
-            setAppPackageName(context.packageName)
+            setAppPackageName(packageName)
             // Restricted permissions are allowlisted by default, but state it
             // explicitly — keeping READ_SMS holdable is the entire reason this
             // code path exists, and a default is a thing that can change.

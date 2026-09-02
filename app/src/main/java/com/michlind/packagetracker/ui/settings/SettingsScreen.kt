@@ -81,6 +81,7 @@ fun SettingsScreen(
     val message by viewModel.message.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val smsPluginState by viewModel.smsPluginState.collectAsStateWithLifecycle()
+    val pluginInstall by viewModel.pluginInstall.collectAsStateWithLifecycle()
     val isAliConnected by viewModel.isAliConnected.collectAsStateWithLifecycle()
     val toShipPages by viewModel.toShipPages.collectAsStateWithLifecycle()
     val shippedPages by viewModel.shippedPages.collectAsStateWithLifecycle()
@@ -467,7 +468,9 @@ fun SettingsScreen(
 
             SmsHelperSection(
                 state = smsPluginState,
-                onOpenHelper = { viewModel.openSmsHelper() }
+                installState = pluginInstall,
+                onOpenHelper = { viewModel.openSmsHelper() },
+                onInstallPlugin = { viewModel.installSmsPlugin() }
             )
         }
     }
@@ -482,7 +485,9 @@ fun SettingsScreen(
 @Composable
 private fun SmsHelperSection(
     state: SmsPluginState,
-    onOpenHelper: () -> Unit
+    installState: PluginInstallState,
+    onOpenHelper: () -> Unit,
+    onInstallPlugin: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
@@ -516,9 +521,12 @@ private fun SmsHelperSection(
                     "Android won't let an app that's installed outside the Play " +
                     "Store read messages — the install is blocked outright. So " +
                     "the message reading lives in a separate small app, " +
-                    "\"AliTrack SMS Plugin\". Install it once and AliTrack can " +
-                    "ask it for delivery messages without ever touching your " +
-                    "inbox itself.\n\n" +
+                    "\"AliTrack SMS Plugin\" (59 KB). AliTrack can ask it for " +
+                    "delivery messages without ever touching your inbox " +
+                    "itself.\n\n" +
+                    "Tap below and AliTrack will download and install it for " +
+                    "you — Android will ask you to confirm. Afterwards, open " +
+                    "the plugin once and allow SMS access.\n\n" +
                     "It's optional. Everything else works without it."
         },
         style = MaterialTheme.typography.bodySmall,
@@ -550,8 +558,30 @@ private fun SmsHelperSection(
         SmsPluginState.NOT_GRANTED ->
             Button(onClick = onOpenHelper) { Text("Open plugin") }
 
-        SmsPluginState.NOT_INSTALLED ->
-            Button(onClick = onOpenHelper) { Text("Get the SMS plugin") }
+        SmsPluginState.NOT_INSTALLED -> {
+            val downloading = installState as? PluginInstallState.Downloading
+            if (downloading != null) {
+                LinearProgressIndicator(
+                    progress = { downloading.percent / 100f },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Downloading… ${downloading.percent}%",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                Button(onClick = onInstallPlugin) { Text("Install SMS plugin") }
+            }
+            (installState as? PluginInstallState.Error)?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    it.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
     }
 }
 
