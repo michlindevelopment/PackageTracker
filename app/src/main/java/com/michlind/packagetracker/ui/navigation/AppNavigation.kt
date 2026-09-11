@@ -9,7 +9,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -71,25 +73,25 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 .collectAsStateWithLifecycle()
             HomeScreen(
                 onPackageClick = { id ->
-                    navController.navigate(Screen.Detail.createRoute(id))
+                    navController.navigateFromUser(Screen.Detail.createRoute(id))
                 },
                 onAddClick = {
-                    navController.navigate(Screen.AddEdit.createRoute())
+                    navController.navigateFromUser(Screen.AddEdit.createRoute())
                 },
                 onSettingsClick = {
-                    navController.navigate(Screen.Settings.route)
+                    navController.navigateFromUser(Screen.Settings.route)
                 },
                 onSearchClick = {
-                    navController.navigate(Screen.Search.route)
+                    navController.navigateFromUser(Screen.Search.route)
                 },
                 onStatisticsClick = {
-                    navController.navigate(Screen.Statistics.route)
+                    navController.navigateFromUser(Screen.Statistics.route)
                 },
                 onSignInToAliExpress = {
-                    navController.navigate(Screen.AliLogin.route)
+                    navController.navigateFromUser(Screen.AliLogin.route)
                 },
                 onVerifyCaptcha = { trackingNumber ->
-                    navController.navigate(Screen.Captcha.createRoute(trackingNumber))
+                    navController.navigateFromUser(Screen.Captcha.createRoute(trackingNumber))
                 },
                 refreshAndShowInTransit = refreshSignal,
                 onRefreshConsumed = {
@@ -102,7 +104,7 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
             SearchScreen(
                 onBack = { navController.popBackStack() },
                 onPackageClick = { id ->
-                    navController.navigate(Screen.Detail.createRoute(id))
+                    navController.navigateFromUser(Screen.Detail.createRoute(id))
                 }
             )
         }
@@ -151,10 +153,10 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
             DetailScreen(
                 packageId = packageId,
                 onEditClick = { id ->
-                    navController.navigate(Screen.AddEdit.createRoute(id))
+                    navController.navigateFromUser(Screen.AddEdit.createRoute(id))
                 },
                 onShowRawResponse = {
-                    navController.navigate(Screen.RawResponse.createRoute(packageId))
+                    navController.navigateFromUser(Screen.RawResponse.createRoute(packageId))
                 },
                 onBack = { navController.popBackStack() }
             )
@@ -203,5 +205,22 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
             sharedImageUri = uri,
             onDismiss = { pendingSharedUri = null }
         )
+    }
+}
+
+/**
+ * [NavController.navigate] for taps: only fires while the current screen is
+ * fully settled ([Lifecycle.State.RESUMED]).
+ *
+ * The moment a navigation starts, the source entry drops to STARTED for the
+ * length of the transition, so the second and third tap of a fast double- or
+ * triple-tap arrive while the screen is not RESUMED and are dropped instead of
+ * pushing duplicate destinations onto the back stack. Programmatic navigation
+ * (notification deep link, pop-then-push after saving) must keep using plain
+ * [NavController.navigate] — it runs while nothing is RESUMED yet.
+ */
+private fun NavController.navigateFromUser(route: String) {
+    if (currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED) {
+        navigate(route)
     }
 }
