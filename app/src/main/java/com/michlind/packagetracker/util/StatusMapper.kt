@@ -8,7 +8,7 @@ import com.michlind.packagetracker.domain.model.PackageStatus
  * Cainiao's top-level `status` field is too coarse to drive the UI — it reads
  * `"DELIVERING"` for the entire transit phase, including pre-shipment
  * advance-shipping notices — so status comes from the per-event `actionCode`
- * instead. Three things make that harder than a lookup table:
+ * instead. Four things make that harder than a lookup table:
  *
  *  1. **Cainiao invents codes.** `COMMON_INTRANSIT`, `LAST_MILE_HO_SUCCESS`
  *     and friends appear nowhere in the Alibaba TOP enum (apiId 30120) this
@@ -31,6 +31,14 @@ import com.michlind.packagetracker.domain.model.PackageStatus
  *     are resolved by which customs milestones already appear in the trace
  *     (see [anchor]), and the answer can never fall below the furthest
  *     *milestone* already reached (see [MILESTONE_STATUSES]).
+ *
+ *  4. **Import customs can start before the parcel leaves.** Cainiao files
+ *     the customs data with the destination country while the parcel is
+ *     still at origin, and that country's system "starts" clearance on the
+ *     paperwork — so `CC_IM_START` can precede `CC_EX_START` by hours. A
+ *     parcel cannot clear import before export, so an import-customs event
+ *     older than the newest export-customs event is dropped before the
+ *     anchor and floor logic see it (see [deriveStatus]).
  *
  * Where the TOP reference distinguishes states this enum doesn't (LAST_MILE vs
  * OUT_FOR_DELIVERY, DUTIES_DUE vs IMPORT_CUSTOMS, RETURNED vs EXCEPTION) we
@@ -105,10 +113,22 @@ object StatusMapper {
         // rest of the field is not, and is ignored.
         if (isDeliveredApiStatus(apiStatus)) return PackageStatus.DELIVERED
 
+        // ── Drop import-customs pre-declarations ──────────────────────────
+        // A parcel cannot clear import before it clears export, so a
+        // CUSTOMS_IMPORT entry older than the newest CUSTOMS_EXPORT one is the
+        // destination country processing paperwork, not the parcel arriving.
+        // This has to happen before both the anchor and the floor look at the
+        // list: fixing only `sawImport` leaves the stray entry in the floor,
+        // which then forces "Import Customs" anyway.
+        val newestExport = statuses.indexOf(PackageStatus.CUSTOMS_EXPORT)
+        val trace = if (newestExport < 0) statuses else statuses.filterIndexed { i, s ->
+            !(s == PackageStatus.CUSTOMS_IMPORT && i > newestExport)
+        }
+
         // ── Where the trace says we are ───────────────────────────────────
-        val sawImport = statuses.contains(PackageStatus.CUSTOMS_IMPORT)
-        val sawExport = statuses.contains(PackageStatus.CUSTOMS_EXPORT)
-        val latest = statuses.firstOrNull()
+        val sawImport = trace.contains(PackageStatus.CUSTOMS_IMPORT)
+        val sawExport = trace.contains(PackageStatus.CUSTOMS_EXPORT)
+        val latest = trace.firstOrNull()
         val base = latest?.let { anchor(it, sawImport, sawExport) } ?: mapByProgress(progressRate)
         // The newest scan told us nothing by name, so `base` is an inference
         // from customs anchors or progressRate rather than a reading.
@@ -118,7 +138,7 @@ object StatusMapper {
         // Ambiguous "moving" statuses are deliberately not milestones: an
         // origin-hub LH_* scan precedes export customs, so counting it would
         // hide the later "Export Customs" state.
-        val floor = statuses.filter { it in MILESTONE_STATUSES }.maxByOrNull { it.stepIndex }
+        val floor = trace.filter { it in MILESTONE_STATUSES }.maxByOrNull { it.stepIndex }
             ?: return base
         // On a tie the newest scan wins — "Awaiting Pickup" is more useful
         // than the "Local Courier" milestone behind it — unless `base` is only
