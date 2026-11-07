@@ -47,6 +47,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.michlind.packagetracker.domain.model.TrackedPackage
+import com.michlind.packagetracker.ui.components.PackagePhoto
 import com.michlind.packagetracker.ui.components.colorAndIcon
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -177,21 +178,11 @@ private fun SearchResultRow(
                 .clip(RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
-            if (pkg.photoUri != null) {
-                AsyncImage(
-                    model = pkg.photoUri,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Inventory2,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
+            PackagePhoto(
+                pkg = pkg,
+                placeholderTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                placeholderSize = 28.dp
+            )
         }
         Spacer(Modifier.width(16.dp))
         Column(

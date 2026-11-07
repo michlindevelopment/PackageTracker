@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.michlind.packagetracker.BuildConfig
 import com.michlind.packagetracker.data.preferences.AliImportPreferenceRepository
+import com.michlind.packagetracker.util.AliSession
 import com.michlind.packagetracker.data.preferences.MockTrackingPreferenceRepository
 import com.michlind.packagetracker.data.preferences.NotificationPreferenceRepository
 import com.michlind.packagetracker.data.preferences.SyncOnResumePreferenceRepository
@@ -182,13 +183,8 @@ class SettingsViewModel @Inject constructor(
     // The AliExpress login marker is the `sign=y` cookie on aliexpress.com —
     // same heuristic used by AliLoginScreen and BgAliImportWebView.
     fun refreshAliConnection() {
-        val cookies = try {
-            CookieManager.getInstance().getCookie("https://www.aliexpress.com").orEmpty()
-        } catch (e: Exception) {
-            Log.e(TAG, "refreshAliConnection failed", e)
-            ""
-        }
-        _isAliConnected.value = cookies.contains("sign=y")
+        // The cookie alone can be stale; a failed sync records the real state.
+        _isAliConnected.value = AliSession.hasSessionCookie() && !importPrefs.aliDisconnected
     }
 
     fun setTheme(value: ThemePreference) {

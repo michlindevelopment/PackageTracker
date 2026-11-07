@@ -4,6 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.michlind.packagetracker.BuildConfig
+import com.michlind.packagetracker.di.CainiaoRateLimitException
+import java.io.IOException
 import com.michlind.packagetracker.data.repository.SmsPluginState
 import com.michlind.packagetracker.data.repository.SmsRepository
 import com.michlind.packagetracker.domain.model.TrackedPackage
@@ -29,6 +31,9 @@ sealed interface DetailUiState {
     data class Success(val pkg: TrackedPackage) : DetailUiState
     data class Error(val message: String) : DetailUiState
 }
+
+/** Why a manual refresh failed. [needsVerification] = Cainiao wants a human check. */
+data class RefreshFailure(val message: String, val needsVerification: Boolean)
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -57,6 +62,28 @@ class DetailViewModel @Inject constructor(
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    private val _refreshFailure = MutableStateFlow<RefreshFailure?>(null)
+    val refreshFailure: StateFlow<RefreshFailure?> = _refreshFailure.asStateFlow()
+
+    fun clearRefreshFailure() {
+        _refreshFailure.value = null
+    }
+
+    // Set when the user leaves for the Cainiao verification page, so coming
+    // back re-runs the refresh that was blocked.
+    private var verifyRetryPending = false
+
+    fun expectVerifyRetry() {
+        verifyRetryPending = true
+    }
+
+    fun retryIfVerifyPending(packageId: Long) {
+        if (verifyRetryPending) {
+            verifyRetryPending = false
+            refresh(packageId)
+        }
+    }
 
     private val _deleted = MutableStateFlow(false)
     val deleted: StateFlow<Boolean> = _deleted.asStateFlow()
@@ -151,9 +178,21 @@ class DetailViewModel @Inject constructor(
     }
 
     fun refresh(packageId: Long) {
+        if (_isRefreshing.value) return
         viewModelScope.launch {
             _isRefreshing.value = true
-            refreshPackage(packageId)
+            // Failures used to vanish: tapping refresh while Cainiao was
+            // blocking us did nothing visible and offered no way to fix it.
+            refreshPackage(packageId).onFailure { e ->
+                _refreshFailure.value = when (e) {
+                    is CainiaoRateLimitException ->
+                        RefreshFailure("Cainiao is asking us to verify.", needsVerification = true)
+                    is IOException ->
+                        RefreshFailure("Couldn't reach Cainiao. Check your connection.", needsVerification = false)
+                    else ->
+                        RefreshFailure(e.message ?: "Couldn't refresh tracking.", needsVerification = false)
+                }
+            }
             val pkg = repository.getPackageById(packageId)
             if (pkg != null) {
                 _uiState.value = DetailUiState.Success(pkg)
@@ -172,9 +211,9 @@ class DetailViewModel @Inject constructor(
     fun delete(packageId: Long) {
         viewModelScope.launch {
             // Detail-screen delete has no undo — clean up the image immediately.
-            val photoUri = (_uiState.value as? DetailUiState.Success)?.pkg?.photoUri
+            val photoUris = (_uiState.value as? DetailUiState.Success)?.pkg?.allPhotoUris.orEmpty()
             deletePackage(packageId)
-            photoUri?.let { imageDownloader.delete(it) }
+            photoUris.forEach { imageDownloader.delete(it) }
             _deleted.value = true
         }
     }

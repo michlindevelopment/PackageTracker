@@ -107,22 +107,12 @@ fun PackageCard(
                     .background(statusColor.copy(alpha = 0.22f)),
                 contentAlignment = Alignment.Center
             ) {
-                if (pkg.photoUri != null) {
-                    AsyncImage(
-                        model = pkg.photoUri,
-                        contentDescription = "Package photo",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        alignment = Alignment.Center
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Inventory2,
-                        contentDescription = null,
-                        tint = statusColor.copy(alpha = 0.7f),
-                        modifier = Modifier.size(38.dp)
-                    )
-                }
+                PackagePhoto(
+                    pkg = pkg,
+                    placeholderTint = statusColor.copy(alpha = 0.7f),
+                    placeholderSize = 38.dp,
+                    contentDescription = "Package photo"
+                )
             }
 
             Spacer(Modifier.width(12.dp))
@@ -198,15 +188,28 @@ fun PackageCard(
                     //         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
                     //     )
                     // }
-                    pkg.daysInTransit?.let { days ->
+                    // "3 items" (multi-item order) and "12d in transit", joined.
+                    val transitLabel = pkg.daysInTransit?.let { days ->
                         val n = days.filter { it.isDigit() }
+                        if (n.isNotEmpty()) "${n}d in transit" else days
+                    }
+                    val infoLabel = listOfNotNull(
+                        if (pkg.isMultiItem) "${pkg.itemCount} items" else null,
+                        transitLabel
+                    ).joinToString(" \u00B7 ")
+                    if (infoLabel.isNotEmpty()) {
                         Text(
-                            text = if (n.isNotEmpty()) "${n}d in transit" else days,
+                            text = infoLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = statusColor.copy(alpha = 0.8f),
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .padding(end = 8.dp)
                         )
-                    } ?: Spacer(Modifier.width(0.dp))
+                    } else Spacer(Modifier.width(0.dp))
                     StatusBadge(status = pkg.status, isRefreshing = isRefreshing)
                 }
             }

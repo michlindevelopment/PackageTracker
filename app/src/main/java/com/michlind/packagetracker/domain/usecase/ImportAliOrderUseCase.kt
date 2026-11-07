@@ -28,6 +28,21 @@ class ImportAliOrderUseCase @Inject constructor(
     private val repository: PackageRepository,
     private val imageDownloader: RemoteImageDownloader
 ) {
+    /**
+     * Downloads every item thumbnail of a multi-item order. Item 0 reuses
+     * [firstLocal] (the already-downloaded main photo) when given, so the
+     * first image is never fetched twice for a brand-new order. Items whose
+     * download fails are skipped, so the result can be shorter than [urls].
+     */
+    private suspend fun downloadItemPhotos(
+        orderId: String,
+        urls: List<String>,
+        firstLocal: String?
+    ): List<String> = urls.mapIndexedNotNull { index, url ->
+        if (index == 0 && firstLocal != null) firstLocal
+        else imageDownloader.download(url, fileBaseName = "${orderId}_$index")
+    }
+
     suspend operator fun invoke(
         order: AliOrderImport,
         mode: AliImportMode = AliImportMode.Quick
@@ -38,13 +53,20 @@ class ImportAliOrderUseCase @Inject constructor(
         val notYetShipped = isNotYetShipped(order.statusText)
         val received = isReceivedStatus(order.statusText)
 
+        // All item thumbnails on the order card. Older scripts only sent the
+        // first one (imageUrl), so fall back to that.
+        val imageUrls = order.imageUrls.orEmpty().filter { it.isNotBlank() }
+            .ifEmpty { listOfNotNull(order.imageUrl?.takeIf { it.isNotBlank() }) }
+        val itemCount = maxOf(order.itemCount, imageUrls.size, 1)
+
         Log.d(
             TAG,
             "import order=${order.orderId} name='${order.name.take(40)}' " +
                 "tn='${tn.ifBlank { "<none>" }}' existing=${existing != null} " +
                 "existingTn='${existing?.trackingNumber.orEmpty()}' " +
                 "cardStatus='${order.statusText.orEmpty()}' " +
-                "notYetShipped=$notYetShipped received=$received"
+                "notYetShipped=$notYetShipped received=$received " +
+                "items=$itemCount images=${imageUrls.size}"
         )
 
         return runCatching {
@@ -53,6 +75,9 @@ class ImportAliOrderUseCase @Inject constructor(
                     val localPhoto = order.imageUrl?.let {
                         imageDownloader.download(it, fileBaseName = order.orderId)
                     }
+                    val itemPhotos = if (itemCount > 1) {
+                        downloadItemPhotos(order.orderId, imageUrls, localPhoto)
+                    } else emptyList()
 
                     // If a row with this tracking number already exists, this
                     // new order is joining an existing multi-group (multiple
@@ -101,7 +126,9 @@ class ImportAliOrderUseCase @Inject constructor(
                         originCountry = sibling?.originCountry,
                         destCountry = sibling?.destCountry,
                         externalOrderId = externalId,
-                        progressRate = sibling?.progressRate
+                        progressRate = sibling?.progressRate,
+                        itemCount = itemCount,
+                        itemPhotoUris = itemPhotos
                     )
                     val newId = repository.addPackage(pkg)
                     // Carrier-status fetch is no longer triggered inline.
@@ -130,7 +157,8 @@ class ImportAliOrderUseCase @Inject constructor(
                         updated = updated.copy(
                             isReceived = true,
                             status = PackageStatus.DELIVERED,
-                            statusDescription = order.statusText.orEmpty()
+                            statusDescription = order.statusText.orEmpty(),
+                            receivedAt = System.currentTimeMillis()
                         )
                         reasons += "received"
                     }
@@ -180,6 +208,26 @@ class ImportAliOrderUseCase @Inject constructor(
                         if (!photo.isNullOrBlank()) {
                             updated = updated.copy(photoUri = photo)
                             reasons += "photo"
+                        }
+                    }
+
+                    // Orders imported before multi-item support (or whose card
+                    // showed fewer items back then) only have the first photo.
+                    // Re-download the full gallery whenever the card now shows
+                    // more items than we have photos for.
+                    val needsItemBackfill = itemCount > 1 && imageUrls.size > 1 &&
+                        (existing.itemCount != itemCount ||
+                            existing.itemPhotoUris.size < imageUrls.size)
+                    if (needsItemBackfill) {
+                        val itemPhotos = downloadItemPhotos(order.orderId, imageUrls, firstLocal = null)
+                        if (itemPhotos.size > existing.itemPhotoUris.size ||
+                            existing.itemCount != itemCount
+                        ) {
+                            updated = updated.copy(
+                                itemCount = itemCount,
+                                itemPhotoUris = itemPhotos
+                            )
+                            reasons += "items"
                         }
                     }
 

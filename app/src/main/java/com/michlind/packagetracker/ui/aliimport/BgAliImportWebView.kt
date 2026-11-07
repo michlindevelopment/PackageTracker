@@ -23,10 +23,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.michlind.packagetracker.util.AliSession
 import kotlinx.coroutines.launch
 
 private const val ORDERS_URL = "https://www.aliexpress.com/p/order/index.html"
 private const val BRIDGE_NAME = "AliBridge"
+private const val MAX_BOUNCES = 2
 // All import logging — page loads, load errors, the `[Ali]` JS console stream,
 // the bridge's dlog channel, and the wall-clock summaries — shares this one tag
 // so `adb logcat -s DTAG` captures the entire import in a single stream.
@@ -85,6 +87,10 @@ fun BgAliImportWebView(
     // bridge completion. That's harmless: the host's outcome deferred is
     // already settled and `complete()` is idempotent.
     val settled = remember { mutableStateOf(false) }
+    // How many times we have bounced an off-orders page back to the orders
+    // page. A stale `sign=y` cookie with a dead server session would otherwise
+    // loop orders -> redirect -> orders until the 30 minute import timeout.
+    val bounces = remember { IntArray(1) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -145,7 +151,7 @@ fun BgAliImportWebView(
                     override fun onPageFinished(view: WebView, url: String) {
                         if (settled.value) return
                         Log.d(TAG, "onPageFinished: $url")
-                        val isLoginPage = url.contains("login.aliexpress")
+                        val isLoginPage = AliSession.isLoginUrl(url)
                         val isOrdersPage = url.contains("/p/order/")
 
                         if (isLoginPage) {
@@ -164,9 +170,8 @@ fun BgAliImportWebView(
                         if (!isOrdersPage) {
                             // Interstitial / redirect. If we still have a
                             // session, bounce to orders; otherwise skip.
-                            val cookies = CookieManager.getInstance()
-                                .getCookie("https://www.aliexpress.com").orEmpty()
-                            if (cookies.contains("sign=y")) {
+                            if (AliSession.hasSessionCookie() && bounces[0] < MAX_BOUNCES) {
+                                bounces[0]++
                                 view.loadUrl(ORDERS_URL)
                             } else {
                                 settled.value = true

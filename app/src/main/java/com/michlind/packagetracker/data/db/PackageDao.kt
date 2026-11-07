@@ -23,7 +23,7 @@ interface PackageDao {
     @Query("SELECT * FROM packages WHERE isReceived = 0 AND status != 'NOT_YET_SENT' ORDER BY lastUpdated DESC, id DESC")
     fun getActivePackages(): Flow<List<PackageEntity>>
 
-    @Query("SELECT * FROM packages WHERE isReceived = 1 ORDER BY lastUpdated DESC, id DESC")
+    @Query("SELECT * FROM packages WHERE isReceived = 1 ORDER BY receivedAt DESC, id DESC")
     fun getReceivedPackages(): Flow<List<PackageEntity>>
 
     @Query("SELECT * FROM packages WHERE status = 'NOT_YET_SENT' AND isReceived = 0 ORDER BY createdAt DESC")
@@ -75,7 +75,7 @@ interface PackageDao {
     @Query("DELETE FROM packages WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("UPDATE packages SET isReceived = :isReceived, lastUpdated = :now WHERE id = :id")
+    @Query("UPDATE packages SET isReceived = :isReceived, lastUpdated = :now, receivedAt = CASE WHEN :isReceived = 1 THEN :now ELSE 0 END WHERE id = :id")
     suspend fun setReceived(id: Long, isReceived: Boolean, now: Long)
 
     @Query("UPDATE packages SET localTrackingNumber = :tn WHERE id = :id")

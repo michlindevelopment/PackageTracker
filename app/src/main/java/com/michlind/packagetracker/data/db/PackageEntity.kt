@@ -1,5 +1,6 @@
 package com.michlind.packagetracker.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -42,5 +43,11 @@ data class PackageEntity(
     // Only used by the hidden debug screen reachable via 5-tap on the
     // Shipping Progress card. Nullable for packages that have never been
     // refreshed (or for "To Ship" rows with no real TN).
-    val rawApiJson: String? = null
+    val rawApiJson: String? = null,
+    // Number of items in the order (>1 for an AliExpress multi-item order).
+    @ColumnInfo(defaultValue = "1") val itemCount: Int = 1,
+    // JSON array of local image URIs, one per item thumbnail, or null.
+    val itemPhotosJson: String? = null,
+    // Epoch ms of the moment the package moved to Received; 0 = unknown.
+    @ColumnInfo(defaultValue = "0") val receivedAt: Long = 0L
 )

@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import com.michlind.packagetracker.util.AliSession
 import kotlinx.coroutines.delay
 
 // Land on the desktop orders page; AliExpress redirects unauthenticated
@@ -61,18 +62,10 @@ private val AUTH_HOST_HINTS = listOf(
     "passport.aliexpress.com"
 )
 
-private fun isAuthFlowUrl(url: String): Boolean =
-    AUTH_HOST_HINTS.any { url.contains(it, ignoreCase = true) }
+private fun isAuthFlowUrl(url: String): Boolean = AliSession.isAuthFlowUrl(url)
 
 private fun userAgentFor(url: String, deviceUaNoWv: String): String =
     if (isAuthFlowUrl(url)) deviceUaNoWv else DESKTOP_UA
-
-// Loose substring match — same heuristic the rest of the codebase uses
-// (BgAliImportWebView, HomeViewModel). The login flow doesn't have any
-// cookies whose value would contain "sign=y" before authentication, so
-// false positives aren't a practical concern here.
-private fun hasSignCookie(cookies: String): Boolean =
-    cookies.contains("sign=y")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
@@ -89,18 +82,36 @@ fun AliLoginScreen(
     // login.aliexpress a few times can't fire the listener twice.
     val signaled = remember { mutableStateOf(false) }
 
-    // Backup poll: AliExpress's login can complete via AJAX without a
-    // full-page navigation, so onPageFinished may not fire after the user
-    // clicks "Sign In". Sample the cookie jar every 500ms while the
-    // screen is alive — first time `sign=y` shows up, fire the callback
-    // and stop. Cancelled when the composable leaves composition.
+    // What the WebView is showing right now, and whether it has been on a
+    // login page at any point. Together with the cookie snapshot taken on
+    // entry they separate "the user just signed in" from "an expired session
+    // left a `sign=y` cookie behind".
+    val currentUrl = remember { mutableStateOf<String?>(null) }
+    val sawLogin = remember { mutableStateOf(false) }
+    val initialCookies = remember { AliSession.cookieHeader() }
+
+    // Success detector, polled because AliExpress's login can complete via
+    // AJAX with no navigation. A bare `sign=y` is NOT enough: that cookie can
+    // outlive the server session, and treating it as success bounced the user
+    // straight back to Home without ever showing the login page, with no way
+    // to reconnect. Instead require the cookie PLUS proof the server accepted
+    // it, held steady for ~2s:
+    //   - the orders page is showing (AliExpress did not redirect us to
+    //     login), or
+    //   - we passed through a login page and the cookies have since changed.
     LaunchedEffect(Unit) {
+        var steadyTicks = 0
         while (!signaled.value) {
             delay(500)
-            val cookies = CookieManager.getInstance()
-                .getCookie("https://www.aliexpress.com").orEmpty()
-            if (hasSignCookie(cookies)) {
-                Log.d(TAG, "poll: sign=y detected → firing onLoggedIn")
+            val url = currentUrl.value
+            val signed = AliSession.hasSessionCookie()
+            val trusted = signed && url != null && !AliSession.isAuthFlowUrl(url) && (
+                url.contains("/p/order/") ||
+                    (sawLogin.value && AliSession.cookieHeader() != initialCookies)
+                )
+            steadyTicks = if (trusted) steadyTicks + 1 else 0
+            if (steadyTicks >= 4) {
+                Log.d(TAG, "poll: signed in (url=$url sawLogin=${sawLogin.value}) → firing onLoggedIn")
                 signaled.value = true
                 onLoggedIn()
                 break
@@ -130,6 +141,7 @@ fun AliLoginScreen(
         ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
+                onRelease = { it.stopLoading(); it.destroy() },
                 factory = { ctx ->
                     WebView(ctx).apply {
                         CookieManager.getInstance().setAcceptCookie(true)
@@ -179,23 +191,27 @@ fun AliLoginScreen(
                                 return false
                             }
 
+                            // Also fires for in-page (pushState) navigations,
+                            // which onPageFinished does not.
+                            override fun doUpdateVisitedHistory(
+                                view: WebView,
+                                url: String,
+                                isReload: Boolean
+                            ) {
+                                currentUrl.value = url
+                                if (isAuthFlowUrl(url)) sawLogin.value = true
+                            }
+
                             override fun onPageFinished(
                                 view: WebView,
                                 url: String
                             ) {
-                                if (signaled.value) return
-                                val cookies = CookieManager.getInstance()
-                                    .getCookie("https://www.aliexpress.com")
-                                    .orEmpty()
-                                val signed = hasSignCookie(cookies)
+                                currentUrl.value = url
+                                if (isAuthFlowUrl(url)) sawLogin.value = true
                                 Log.d(
                                     TAG,
-                                    "onPageFinished: $url (sign=y? $signed)"
+                                    "onPageFinished: $url (sign=y? ${AliSession.hasSessionCookie()})"
                                 )
-                                if (signed) {
-                                    signaled.value = true
-                                    onLoggedIn()
-                                }
                             }
 
                             override fun onReceivedError(

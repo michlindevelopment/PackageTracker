@@ -28,5 +28,21 @@ data class TrackedPackage(
     val localTrackingNumber: String? = null,
     // Last raw Cainiao API response, serialized JSON. Surfaced only by the
     // hidden debug screen reachable via 5-tap on the Shipping Progress card.
-    val rawApiJson: String? = null
-)
+    val rawApiJson: String? = null,
+    // Number of items in the order. Greater than 1 for an AliExpress order
+    // that bundles several products under one card.
+    val itemCount: Int = 1,
+    // Local copies of every item thumbnail in the order, in display order.
+    // May be shorter than [itemCount] when some downloads failed.
+    val itemPhotoUris: List<String> = emptyList(),
+    // When the package moved to Received (epoch ms), used to keep the
+    // Received tab ordered "last received on top". 0 = unknown, which sorts
+    // below every known time.
+    val receivedAt: Long = 0L
+) {
+    val isMultiItem: Boolean get() = itemCount > 1
+
+    // Every image file this package owns, for cleanup on delete.
+    val allPhotoUris: List<String>
+        get() = (listOfNotNull(photoUri) + itemPhotoUris).distinct()
+}

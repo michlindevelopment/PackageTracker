@@ -118,6 +118,8 @@ import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.ui.aliimport.BgAliImportWebView
 import com.michlind.packagetracker.ui.components.EmptyState
 import com.michlind.packagetracker.ui.components.PackageCard
+import com.michlind.packagetracker.ui.components.PackagePhoto
+import com.michlind.packagetracker.util.AliSession
 import com.michlind.packagetracker.ui.components.StatusBadge
 import com.michlind.packagetracker.ui.components.colorAndIcon
 import kotlinx.coroutines.launch
@@ -189,9 +191,21 @@ fun HomeScreen(
             duration = if (tn != null) SnackbarDuration.Long else SnackbarDuration.Short
         )
         if (result == SnackbarResult.ActionPerformed && tn != null) {
+            viewModel.expectCaptchaRetry()
             onVerifyCaptcha(tn)
         }
         viewModel.clearError()
+    }
+
+    // Coming back from the verification page (or anywhere else) resumes Home;
+    // the view model retries the blocked sync if one was waiting on it.
+    val homeLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(homeLifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.onHomeResumed()
+        }
+        homeLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { homeLifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Triggered after AliExpress login completes. Switch to the In Transit
@@ -320,7 +334,7 @@ fun HomeScreen(
             text = { Text("Your AliExpress session has expired. Reconnect to sync your orders.") },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.dismissAliDisconnected()
+                    viewModel.onReconnectClicked()
                     onSignInToAliExpress()
                 }) { Text("Connect") }
             },
@@ -534,9 +548,9 @@ fun HomeScreen(
                 //         viewModel.quickFetchThenSyncStatus()
                 //     }
                 // )
-                // Hidden while disconnected from AliExpress — there's no session
-                // to sync with. The reconnect prompt (or the FAB "Sign in")
-                // is the path back.
+                // While disconnected there is no session to sync with, so the
+                // sync row turns into the way back. Hiding it outright left
+                // nothing here once the reconnect dialog had been dismissed.
                 if (!aliDisconnected) {
                     BottomSheetActionRow(
                         icon = Icons.Default.CloudSync,
@@ -545,6 +559,16 @@ fun HomeScreen(
                         onClick = {
                             showRefreshOptions = false
                             viewModel.fullFetchThenSyncStatus()
+                        }
+                    )
+                } else {
+                    BottomSheetActionRow(
+                        icon = Icons.Default.ShoppingCart,
+                        title = "Reconnect to AliExpress",
+                        subtitle = "Your session expired. Sign in again to sync orders",
+                        onClick = {
+                            showRefreshOptions = false
+                            onSignInToAliExpress()
                         }
                     )
                 }
@@ -614,9 +638,9 @@ fun HomeScreen(
                     // background sync handles new orders automatically. Skip
                     // the sheet and go straight to manual add. Same loose
                     // sign=y heuristic used elsewhere in the app.
-                    val cookies = CookieManager.getInstance()
-                        .getCookie("https://www.aliexpress.com").orEmpty()
-                    val signedIn = cookies.contains("sign=y")
+                    // A leftover cookie from an expired session must not hide
+                    // the sign-in option, so a known disconnect wins.
+                    val signedIn = AliSession.hasSessionCookie() && !aliDisconnected
                     if (signedIn) {
                         onAddClick()
                     } else {
@@ -890,7 +914,7 @@ fun PackageGroupCard(
                             .padding(horizontal = 7.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = group.packages.size.toString(),
+                            text = group.itemCount.toString(),
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = MaterialTheme.colorScheme.surface,
                                 fontWeight = FontWeight.Bold
@@ -983,34 +1007,33 @@ private fun SubPackageRow(pkg: TrackedPackage, onClick: () -> Unit) {
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
-            if (pkg.photoUri != null) {
-                AsyncImage(
-                    model = pkg.photoUri,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Inventory2,
-                    contentDescription = null,
-                    modifier = Modifier.size(26.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+            PackagePhoto(
+                pkg = pkg,
+                placeholderTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                placeholderSize = 26.dp
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = pkg.name.ifBlank { "Package" },
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
+                    lineHeight = 16.sp
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (pkg.isMultiItem) {
+                Text(
+                    text = "${pkg.itemCount} items",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
         }
-        Spacer(Modifier.width(14.dp))
-        Text(
-            text = pkg.name.ifBlank { "Package" },
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontWeight = FontWeight.Medium,
-                fontSize = 13.sp,
-                lineHeight = 16.sp
-            ),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
     }
 }
 

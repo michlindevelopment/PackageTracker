@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [PackageEntity::class, TrackingSmsEntity::class],
-    version = 7,
+    version = 9,
     exportSchema = false
 )
 abstract class PackageDatabase : RoomDatabase() {
@@ -46,6 +46,24 @@ abstract class PackageDatabase : RoomDatabase() {
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE packages ADD COLUMN rawApiJson TEXT")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE packages ADD COLUMN itemCount INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE packages ADD COLUMN itemPhotosJson TEXT")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE packages ADD COLUMN receivedAt INTEGER NOT NULL DEFAULT 0")
+                // Best available approximation for packages already in Received:
+                // lastUpdated is stamped when a package is marked received (by
+                // hand or automatically on DELIVERED). Rows imported as already
+                // completed carry 0 and stay at the bottom.
+                db.execSQL("UPDATE packages SET receivedAt = lastUpdated WHERE isReceived = 1")
             }
         }
 

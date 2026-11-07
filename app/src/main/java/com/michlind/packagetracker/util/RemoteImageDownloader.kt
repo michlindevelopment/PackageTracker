@@ -1,6 +1,7 @@
 package com.michlind.packagetracker.util
 
 import android.content.Context
+import androidx.core.net.toUri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -28,6 +29,33 @@ class RemoteImageDownloader @Inject constructor(
             }
         }.getOrNull()
     }
+
+    /**
+     * Copies a user-chosen image into permanent app storage and returns the
+     * new file:// URI, or null if the copy failed. The cropper writes its
+     * output into the cache directory, which Android empties under storage
+     * pressure and on "Clear cache", so a package photo left there silently
+     * disappears later. The copy lands in [IMAGE_SUBDIR], so deleting the
+     * package cleans it up with the rest.
+     */
+    suspend fun persistLocal(source: String, fileBaseName: String): String? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val dir = File(context.filesDir, IMAGE_SUBDIR).apply { if (!exists()) mkdirs() }
+                val file = File(dir, "$fileBaseName.jpg")
+                val sourceUri = source.toUri()
+                val input = context.contentResolver.openInputStream(sourceUri)
+                    ?: return@runCatching null
+                input.use { src -> file.outputStream().use { out -> src.copyTo(out) } }
+                // The cropper's cache copy is no longer needed.
+                if (sourceUri.scheme == "file") {
+                    sourceUri.path?.let { p ->
+                        File(p).takeIf { it.parentFile == context.cacheDir }?.delete()
+                    }
+                }
+                "file://${file.absolutePath}"
+            }.getOrNull()
+        }
 
     /**
      * Best-effort delete of a previously-downloaded image. Only deletes files

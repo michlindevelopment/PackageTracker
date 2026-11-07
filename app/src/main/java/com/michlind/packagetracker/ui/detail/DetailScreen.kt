@@ -17,6 +17,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -69,7 +71,9 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -137,6 +141,7 @@ import com.michlind.packagetracker.domain.model.DestCarrierInfo
 import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.domain.model.TrackingSms
+import com.michlind.packagetracker.ui.components.PackagePhoto
 import com.michlind.packagetracker.ui.components.SkeletonDetailHeader
 import com.michlind.packagetracker.ui.components.TimelineItem
 import com.michlind.packagetracker.ui.components.colorAndIcon
@@ -176,11 +181,13 @@ fun DetailScreen(
     packageId: Long,
     onEditClick: (Long) -> Unit,
     onShowRawResponse: () -> Unit,
+    onVerifyCaptcha: (trackingNumber: String) -> Unit,
     onBack: () -> Unit,
     viewModel: DetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val refreshFailure by viewModel.refreshFailure.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
     val smsList by viewModel.smsList.collectAsStateWithLifecycle()
     val smsPluginState by viewModel.smsPluginState.collectAsStateWithLifecycle()
@@ -198,6 +205,7 @@ fun DetailScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshSmsPermission()
                 viewModel.scanSmsForCurrent()
+                viewModel.retryIfVerifyPending(packageId)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -208,6 +216,25 @@ fun DetailScreen(
         viewModel.load(packageId)
     }
     LaunchedEffect(deleted) { if (deleted) onBack() }
+
+    // Tell the user why a manual refresh did nothing, and when the cause is
+    // Cainiao's bot check, offer the verification page right here.
+    LaunchedEffect(refreshFailure) {
+        val failure = refreshFailure ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = failure.message,
+            actionLabel = if (failure.needsVerification) "Verify" else null,
+            duration = if (failure.needsVerification) SnackbarDuration.Long else SnackbarDuration.Short
+        )
+        if (result == SnackbarResult.ActionPerformed && failure.needsVerification) {
+            val tn = (uiState as? DetailUiState.Success)?.pkg?.trackingNumber.orEmpty()
+            if (tn.isNotBlank()) {
+                viewModel.expectVerifyRetry()
+                onVerifyCaptcha(tn)
+            }
+        }
+        viewModel.clearRefreshFailure()
+    }
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -384,8 +411,9 @@ private fun DetailContent(
     val pagerState = rememberPagerState(pageCount = { tabCount })
     val tabScope = rememberCoroutineScope()
 
-    // Tapping the header thumbnail opens an animated full-screen viewer.
-    var showFullImage by remember { mutableStateOf(false) }
+    // Tapping the header thumbnail (or one of the order's item thumbnails)
+    // opens an animated full-screen viewer for that image.
+    var fullImageUri by remember { mutableStateOf<String?>(null) }
 
     // Collapse the bulky ETA card + Shipping Progress stepper when the
     // user scrolls down inside a pager page, expand them when scrolling
@@ -439,26 +467,17 @@ private fun DetailContent(
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .then(
                         if (pkg.photoUri != null) {
-                            Modifier.clickable { showFullImage = true }
+                            Modifier.clickable { fullImageUri = pkg.photoUri }
                         } else Modifier
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (pkg.photoUri != null) {
-                    AsyncImage(
-                        model = pkg.photoUri,
-                        contentDescription = "Package photo",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Inventory2,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
+                PackagePhoto(
+                    pkg = pkg,
+                    placeholderTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    placeholderSize = 36.dp,
+                    contentDescription = "Package photo"
+                )
             }
             Column(modifier = Modifier.weight(1f)) {
                 val (color, icon) = pkg.status.colorAndIcon()
@@ -533,6 +552,15 @@ private fun DetailContent(
                     )
                 }
             }
+        }
+
+        // Multi-item AliExpress order: show every item, not just the first.
+        if (pkg.isMultiItem && pkg.itemPhotoUris.size > 1) {
+            OrderItemsStrip(
+                itemCount = pkg.itemCount,
+                itemPhotoUris = pkg.itemPhotoUris,
+                onItemClick = { fullImageUri = it }
+            )
         }
 
         // ETA + Shipping Progress collapse together when the user scrolls
@@ -706,11 +734,47 @@ private fun DetailContent(
 
         // Full-screen animated image viewer — opened by tapping the header
         // thumbnail. Supports pinch-to-zoom, pan and tap/double-tap.
-        if (showFullImage && pkg.photoUri != null) {
+        fullImageUri?.let { uri ->
             FullScreenImageViewer(
-                model = pkg.photoUri,
-                onDismiss = { showFullImage = false }
+                model = uri,
+                onDismiss = { fullImageUri = null }
             )
+        }
+    }
+}
+
+@Composable
+private fun OrderItemsStrip(
+    itemCount: Int,
+    itemPhotoUris: List<String>,
+    onItemClick: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "$itemCount items in this order",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            itemPhotoUris.forEach { uri ->
+                AsyncImage(
+                    model = uri,
+                    contentDescription = "Order item",
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { onItemClick(uri) },
+                    contentScale = ContentScale.Crop
+                )
+            }
         }
     }
 }

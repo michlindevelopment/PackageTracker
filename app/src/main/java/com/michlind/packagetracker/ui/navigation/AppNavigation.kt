@@ -117,7 +117,10 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onSignInToAliExpress = {
+                    navController.navigateFromUser(Screen.AliLogin.route)
+                }
             )
         }
 
@@ -157,6 +160,9 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 },
                 onShowRawResponse = {
                     navController.navigateFromUser(Screen.RawResponse.createRoute(packageId))
+                },
+                onVerifyCaptcha = { trackingNumber ->
+                    navController.navigateFromUser(Screen.Captcha.createRoute(trackingNumber))
                 },
                 onBack = { navController.popBackStack() }
             )

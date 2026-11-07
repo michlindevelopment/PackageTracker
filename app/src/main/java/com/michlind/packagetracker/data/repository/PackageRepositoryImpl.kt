@@ -15,6 +15,7 @@ import com.michlind.packagetracker.domain.model.TrackingEvent
 import com.michlind.packagetracker.domain.model.TrackingResult
 import com.michlind.packagetracker.domain.repository.PackageRepository
 import com.michlind.packagetracker.util.StatusMapper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -184,6 +185,8 @@ class PackageRepositoryImpl @Inject constructor(
                     rawApiJson = rawApiJson
                 )
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -218,9 +221,18 @@ class PackageRepositoryImpl @Inject constructor(
         dao.getByTrackingNumber(trackingNumber).firstOrNull()?.toDomain()
 
     override suspend fun refreshTrackingNumber(trackingNumber: String): Result<Map<Long, Boolean>> {
-        val existingRows = dao.getByTrackingNumber(trackingNumber)
-        if (existingRows.isEmpty()) return Result.failure(Exception("Package not found"))
+        // A blank number means "not shipped yet". Never ask Cainiao about it,
+        // and never fan the answer out to every other untracked package (the
+        // blank key matches all of them).
+        if (trackingNumber.isBlank()) return Result.failure(Exception("No tracking number yet"))
+        if (dao.getByTrackingNumber(trackingNumber).isEmpty()) {
+            return Result.failure(Exception("Package not found"))
+        }
         return trackPackage(trackingNumber).map { tracking ->
+            // Read the rows AFTER the network call. The call takes seconds, and
+            // writing back a copy read before it would silently undo anything
+            // the user did meanwhile (mark received, rename, attach a photo).
+            val existingRows = dao.getByTrackingNumber(trackingNumber)
             val now = System.currentTimeMillis()
             val eventsJson = gson.toJson(tracking.events)
             val firstEvent = tracking.events.firstOrNull()
@@ -247,7 +259,8 @@ class PackageRepositoryImpl @Inject constructor(
                     destCarrierUrl = tracking.destCarrier?.url ?: existing.destCarrierUrl,
                     destCarrierEmail = tracking.destCarrier?.email ?: existing.destCarrierEmail,
                     rawApiJson = tracking.rawApiJson ?: existing.rawApiJson,
-                    isReceived = existing.isReceived || nowDelivered
+                    isReceived = existing.isReceived || nowDelivered,
+                    receivedAt = if (!existing.isReceived && nowDelivered) now else existing.receivedAt
                 )
                 dao.update(updated)
                 existing.id to statusChanged
@@ -268,6 +281,13 @@ class PackageRepositoryImpl @Inject constructor(
             PackageStatus.valueOf(this.status)
         } catch (_: Exception) {
             PackageStatus.UNKNOWN
+        }
+        val itemPhotos: List<String> = try {
+            itemPhotosJson
+                ?.let { gson.fromJson<List<String>>(it, object : TypeToken<List<String>>() {}.type) }
+                ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
         }
         val destCarrier = destCarrierName?.takeIf { it.isNotBlank() }?.let { name ->
             DestCarrierInfo(
@@ -297,7 +317,10 @@ class PackageRepositoryImpl @Inject constructor(
             progressRate = progressRate,
             destCarrier = destCarrier,
             localTrackingNumber = localTrackingNumber,
-            rawApiJson = rawApiJson
+            rawApiJson = rawApiJson,
+            itemCount = itemCount.coerceAtLeast(1),
+            itemPhotoUris = itemPhotos,
+            receivedAt = receivedAt
         )
     }
 
@@ -325,6 +348,9 @@ class PackageRepositoryImpl @Inject constructor(
         destCarrierUrl = destCarrier?.url,
         destCarrierEmail = destCarrier?.email,
         localTrackingNumber = localTrackingNumber,
-        rawApiJson = rawApiJson
+        rawApiJson = rawApiJson,
+        itemCount = itemCount,
+        itemPhotosJson = itemPhotoUris.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) },
+        receivedAt = receivedAt
     )
 }

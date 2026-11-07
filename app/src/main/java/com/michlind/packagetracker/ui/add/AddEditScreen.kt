@@ -120,7 +120,7 @@ fun AddEditScreen(
     // Image cropper result launcher
     val cropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
         if (result.isSuccessful) {
-            result.uriContent?.let { viewModel.updatePhotoUri(it.toString()) }
+            result.uriContent?.let { viewModel.onPhotoCropped(it.toString()) }
         }
     }
 
@@ -160,14 +160,7 @@ fun AddEditScreen(
     }
 
     val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA)
-    val storagePermission = rememberPermissionState(
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-            Manifest.permission.READ_MEDIA_IMAGES
-        else
-            Manifest.permission.READ_EXTERNAL_STORAGE
-    )
     var showCameraRationale by remember { mutableStateOf(false) }
-    var showStorageRationale by remember { mutableStateOf(false) }
 
     if (showCameraRationale) {
         AlertDialog(
@@ -179,20 +172,6 @@ fun AddEditScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCameraRationale = false }) { Text(stringResource(R.string.cancel)) }
-            }
-        )
-    }
-
-    if (showStorageRationale) {
-        AlertDialog(
-            onDismissRequest = { showStorageRationale = false },
-            title = { Text("Storage Permission") },
-            text = { Text(stringResource(R.string.storage_permission_rationale)) },
-            confirmButton = {
-                TextButton(onClick = { showStorageRationale = false; storagePermission.launchPermissionRequest() }) { Text("Allow") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showStorageRationale = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -226,11 +205,9 @@ fun AddEditScreen(
                         label = stringResource(R.string.choose_from_gallery),
                         onClick = {
                             showPhotoDialog = false
-                            when {
-                                storagePermission.status.isGranted -> galleryLauncher.launch("image/*")
-                                storagePermission.status.shouldShowRationale -> showStorageRationale = true
-                                else -> storagePermission.launchPermissionRequest()
-                            }
+                            // The system picker needs no storage permission. Gating
+                            // it on one meant a denied prompt blocked gallery photos.
+                            galleryLauncher.launch("image/*")
                         }
                     )
                 }

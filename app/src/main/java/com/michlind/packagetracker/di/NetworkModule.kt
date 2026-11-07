@@ -2,6 +2,7 @@ package com.michlind.packagetracker.di
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.michlind.packagetracker.BuildConfig
 import com.michlind.packagetracker.data.api.CainiaoApiService
 import com.michlind.packagetracker.data.api.GitHubReleaseService
 import com.michlind.packagetracker.data.api.WebViewCookieJar
@@ -42,8 +43,14 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
+        // Full bodies and headers (cookies included) belong in debug logcat
+        // only; release builds must not write them anywhere.
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
         }
         return OkHttpClient.Builder()
             // Share the cookie jar with the WebView so the bot-detection

@@ -15,6 +15,9 @@ import com.michlind.packagetracker.data.preferences.SortPreferenceRepository
 import com.michlind.packagetracker.data.preferences.SyncOnResumePreferenceRepository
 import com.michlind.packagetracker.data.repository.SmsRepository
 import com.michlind.packagetracker.di.CainiaoRateLimitException
+import com.michlind.packagetracker.util.AliSession
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.map
 import com.michlind.packagetracker.domain.model.AliImportMode
 import com.michlind.packagetracker.domain.model.AliOrderImport
 import com.michlind.packagetracker.domain.model.ImportResult
@@ -64,8 +67,15 @@ data class PackageGroup(
     val lastUpdated: Long
 ) {
     val isMultiple: Boolean get() = packages.size > 1
+
+    // Total items across the group: a multi-item order inside the group
+    // counts once per product, not once per order.
+    val itemCount: Int get() = packages.sumOf { it.itemCount.coerceAtLeast(1) }
+
+    // Most recent receive time in the group, used to order the Received tab.
+    val receivedAt: Long get() = packages.maxOf { it.receivedAt }
     val displayName: String
-        get() = if (isMultiple) "Combined package - ${packages.size} items"
+        get() = if (isMultiple) "Combined package - $itemCount items"
                 else packages.first().name.ifBlank { trackingNumber.ifBlank { "Package" } }
 
     // Best-known journey progress within the group: real `progressRate` if
@@ -103,7 +113,7 @@ private fun TrackedPackage.orderDate(): Long =
 private fun TrackedPackage.daysInTransitInt(): Int =
     daysInTransit?.filter { it.isDigit() }?.toIntOrNull() ?: 0
 
-private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup> =
+private fun List<TrackedPackage>.toUnsortedGroups(): List<PackageGroup> =
     groupBy { it.trackingNumber.ifBlank { it.id.toString() } }
         .entries
         .map { (tn, pkgs) ->
@@ -117,6 +127,9 @@ private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup
                 lastUpdated = sorted.maxOf { it.lastUpdated }
             )
         }
+
+private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup> =
+    toUnsortedGroups()
         .let { groups ->
             when (sortMode) {
                 SortMode.CLOSEST_TO_DELIVERY ->
@@ -141,7 +154,17 @@ private fun List<TrackedPackage>.toGroups(sortMode: SortMode): List<PackageGroup
             }
         }
 
-private enum class BgImportOutcome { Completed, Skipped, Aborted }
+// Received tab: the user's sort mode is about journey progress, which means
+// nothing once a package has arrived, so this tab is always newest-received
+// first. Packages with an unknown receive time (imported already completed)
+// fall to the bottom, newest-scraped first.
+private fun List<TrackedPackage>.toReceivedGroups(): List<PackageGroup> =
+    toUnsortedGroups().sortedWith(
+        compareByDescending<PackageGroup> { it.receivedAt }
+            .thenByDescending { g -> g.packages.maxOf { it.id } }
+    )
+
+private enum class BgImportOutcome { Completed, Skipped, Aborted, Failed }
 
 /**
  * Live progress of the in-flight background AliExpress import — surfaced via
@@ -203,7 +226,8 @@ class HomeViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val receivedGroups: StateFlow<List<PackageGroup>> =
-        combine(getReceivedPackages(), sortMode) { pkgs, mode -> pkgs.toGroups(mode) }
+        getReceivedPackages()
+            .map { pkgs -> pkgs.toReceivedGroups() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val notYetSentPackages: StateFlow<List<TrackedPackage>> =
@@ -281,6 +305,13 @@ class HomeViewModel @Inject constructor(
 
     fun dismissAliDisconnected() {
         importPrefs.disconnectDialogDismissed = true
+        _showDisconnectedDialog.value = false
+    }
+
+    // The user chose to reconnect from the dialog. Hide it without recording a
+    // dismissal: if the attempt fails the next disconnected sync must prompt
+    // again, otherwise a failed reconnect leaves no visible way back.
+    fun onReconnectClicked() {
         _showDisconnectedDialog.value = false
     }
 
@@ -448,7 +479,7 @@ class HomeViewModel @Inject constructor(
                         bgImportOutcome?.complete(BgImportOutcome.Completed)
                     }
                     is AliImportEvent.Error -> {
-                        bgImportOutcome?.complete(BgImportOutcome.Aborted)
+                        bgImportOutcome?.complete(BgImportOutcome.Failed)
                     }
                 }
             }
@@ -488,7 +519,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun onBgImportSkipped() { bgImportOutcome?.complete(BgImportOutcome.Skipped) }
-    fun onBgImportError() { bgImportOutcome?.complete(BgImportOutcome.Aborted) }
+    fun onBgImportError() { bgImportOutcome?.complete(BgImportOutcome.Failed) }
     fun onBgImportAborted() { bgImportOutcome?.complete(BgImportOutcome.Aborted) }
 
     private var lastDeletedPackages: List<TrackedPackage>? = null
@@ -527,7 +558,7 @@ class HomeViewModel @Inject constructor(
     private fun scheduleDeferredPhotoCleanup(pkgs: List<TrackedPackage>) {
         pendingPhotoCleanup = viewModelScope.launch {
             delay(8_000)
-            pkgs.forEach { it.photoUri?.let { uri -> imageDownloader.delete(uri) } }
+            pkgs.forEach { p -> p.allPhotoUris.forEach { uri -> imageDownloader.delete(uri) } }
             if (lastDeletedPackages === pkgs) lastDeletedPackages = null
             pendingPhotoCleanup = null
         }
@@ -541,7 +572,7 @@ class HomeViewModel @Inject constructor(
         pendingPhotoCleanup?.cancel()
         pendingPhotoCleanup = null
         viewModelScope.launch {
-            prev.forEach { it.photoUri?.let { uri -> imageDownloader.delete(uri) } }
+            prev.forEach { p -> p.allPhotoUris.forEach { uri -> imageDownloader.delete(uri) } }
         }
     }
 
@@ -725,12 +756,23 @@ class HomeViewModel @Inject constructor(
                         if (_aliDisconnected.value) setDisconnected(false)
                     }
                     BgImportOutcome.Skipped -> {
+                        // AliExpress bounced us to its login page, so the
+                        // server-side session is gone. Drop the leftover
+                        // cookies, or the `sign=y` hint keeps claiming we are
+                        // signed in and hides every way to reconnect.
+                        AliSession.clearSessionCookies()
                         if (hasEverConnected()) {
                             importPrefs.hasConnectedBefore = true
                             setDisconnected(true)
                         }
                     }
                     BgImportOutcome.Aborted -> Unit
+                    // Load failure, unreadable orders page or a script error.
+                    // Used to be swallowed, leaving the user with a sync that
+                    // silently did nothing.
+                    BgImportOutcome.Failed -> _errorMessage.value =
+                        "Couldn't import from AliExpress. Check your connection and try " +
+                            "again. If it keeps failing, disconnect and reconnect in Settings."
                 }
 
                 // Phase 4 — only if the import actually completed AND the
@@ -756,6 +798,8 @@ class HomeViewModel @Inject constructor(
                     }
                     refreshTnsRateLimited(tns)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 _errorMessage.value = "Failed to refresh packages"
             } finally {
@@ -800,6 +844,22 @@ class HomeViewModel @Inject constructor(
     fun clearError() {
         _errorMessage.value = null
         _captchaTrackingNumber.value = null
+    }
+
+    // Set when the user leaves for the Cainiao verification page. The next
+    // time Home is resumed the blocked sync is retried automatically, so the
+    // user does not have to guess whether the verification took.
+    private var captchaRetryPending = false
+
+    fun expectCaptchaRetry() {
+        captchaRetryPending = true
+    }
+
+    fun onHomeResumed() {
+        if (captchaRetryPending) {
+            captchaRetryPending = false
+            syncStatus()
+        }
     }
 
     /**

@@ -9,7 +9,15 @@ data class AliOrderImport(
     // Visible AliExpress card status, e.g. "Awaiting shipment",
     // "Awaiting delivery", "Order completed". Used to decide whether to mark
     // the package as Not Yet Sent or already received on import.
-    val statusText: String? = null
+    val statusText: String? = null,
+    // Every item thumbnail on the order card, in display order (the first one
+    // equals [imageUrl]). Null when the import script predates multi-item
+    // support.
+    val imageUrls: List<String>? = null,
+    // Number of items in the order as shown on the card. Gson bypasses
+    // constructor defaults for this class, so a missing value arrives as 0 —
+    // always read it through coerceAtLeast(1).
+    val itemCount: Int = 1
 )
 
 enum class ImportResult { ADDED, UPGRADED, SKIPPED, FAILED }

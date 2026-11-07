@@ -9,6 +9,7 @@ import com.michlind.packagetracker.domain.repository.PackageRepository
 import com.michlind.packagetracker.domain.usecase.AddPackageUseCase
 import com.michlind.packagetracker.domain.usecase.TrackPackageUseCase
 import com.michlind.packagetracker.domain.usecase.UpdatePackageUseCase
+import com.michlind.packagetracker.util.RemoteImageDownloader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,7 +22,8 @@ class AddEditViewModel @Inject constructor(
     private val repository: PackageRepository,
     private val addPackage: AddPackageUseCase,
     private val updatePackage: UpdatePackageUseCase,
-    private val trackPackageUseCase: TrackPackageUseCase
+    private val trackPackageUseCase: TrackPackageUseCase,
+    private val imageDownloader: RemoteImageDownloader
 ) : ViewModel() {
 
     private val _name = MutableStateFlow("")
@@ -67,6 +69,18 @@ class AddEditViewModel @Inject constructor(
     fun updateName(value: String) { _name.value = value }
     fun updateTrackingNumber(value: String) { _trackingNumber.value = value }
     fun updatePhotoUri(uri: String?) { _photoUri.value = uri }
+
+    // The cropper hands back a file in the cache directory, which the system
+    // can empty at any time. Keep our own copy in app storage so the photo
+    // survives; fall back to the cache path only if the copy fails.
+    fun onPhotoCropped(croppedUri: String) {
+        viewModelScope.launch {
+            _photoUri.value = imageDownloader.persistLocal(
+                source = croppedUri,
+                fileBaseName = "photo_${System.currentTimeMillis()}"
+            ) ?: croppedUri
+        }
+    }
 
     fun track() {
         val tn = _trackingNumber.value.trim()
@@ -127,7 +141,12 @@ class AddEditViewModel @Inject constructor(
                 localTrackingNumber = existing?.localTrackingNumber,
                 // Same reason — keep the cached raw response so the debug
                 // screen still works after an edit.
-                rawApiJson = existing?.rawApiJson
+                rawApiJson = existing?.rawApiJson,
+                // Same reason — an edit must not turn a multi-item order
+                // back into a single-item one.
+                itemCount = existing?.itemCount ?: 1,
+                itemPhotoUris = existing?.itemPhotoUris ?: emptyList(),
+                receivedAt = existing?.receivedAt ?: 0L
             )
 
             val savedId = if (editingPackageId != null) {

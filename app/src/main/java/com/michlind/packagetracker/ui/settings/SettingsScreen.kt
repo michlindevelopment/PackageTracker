@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -75,6 +76,7 @@ import com.michlind.packagetracker.domain.model.ThemePreference
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onSignInToAliExpress: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val theme by viewModel.theme.collectAsStateWithLifecycle()
@@ -401,12 +403,24 @@ fun SettingsScreen(
                     "Sign out of AliExpress in the import browser. Already " +
                         "imported packages stay; the next import will ask for login."
                 else
-                    "You're not signed in to AliExpress. Use \"Import from " +
-                        "AliExpress\" on the home screen to log in.",
+                    "You're not signed in to AliExpress. Connect to import " +
+                        "your orders automatically.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
             )
             Spacer(Modifier.height(12.dp))
+            if (!isAliConnected) {
+                androidx.compose.material3.Button(onClick = onSignInToAliExpress) {
+                    Icon(
+                        imageVector = Icons.Default.ShoppingCart,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    Text("Connect to AliExpress")
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             OutlinedButton(
                 onClick = { showDisconnectDialog = true },
                 enabled = isAliConnected

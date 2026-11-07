@@ -388,11 +388,18 @@
       tagCounts[item.tag] = (tagCounts[item.tag] || 0) + 1;
       if (item.tag === 'pc_om_list_order' && item.fields) {
         var f = item.fields;
-        var line = (f.orderLines && f.orderLines[0]) || {};
+        var lines = f.orderLines || [];
+        var line = lines[0] || {};
+        var lineImages = lines
+          .map(function (l) { return l && l.itemImgUrl ? String(l.itemImgUrl) : ''; })
+          .filter(function (u) { return u; })
+          .slice(0, MAX_ITEM_IMAGES);
         orders.push({
           orderId: String(f.orderId),
           name: line.itemTitle || '',
           imageUrl: line.itemImgUrl || '',
+          imageUrls: lineImages,
+          itemCount: Math.max(lines.length, 1),
           orderStatus: (f.utParams && f.utParams.args && f.utParams.args.orderStatus) || 0,
           orderDateText: f.orderDateText || ''
         });
@@ -564,6 +571,106 @@
     }
   }
 
+  var MAX_ITEM_IMAGES = 12;
+  var loggedMultiItemCard = false;
+
+  function normalizeImgUrl(u) {
+    u = String(u || '').trim();
+    if (u.indexOf('//') === 0) u = 'https:' + u;
+    return u;
+  }
+
+  // Image URL of one item thumbnail: inline background-image first, then the
+  // computed background-image, then an <img> (the element itself or a child).
+  function itemImageUrl(el) {
+    var bg = (el.style && el.style.backgroundImage) || '';
+    if (!bg || bg === 'none') {
+      try { bg = window.getComputedStyle(el).backgroundImage || ''; } catch (_) { bg = ''; }
+    }
+    var m = bg.match(/url\(["']?([^"')]+)["']?\)/);
+    if (m) return normalizeImgUrl(m[1]);
+    var img = el.tagName === 'IMG' ? el : el.querySelector('img');
+    if (img) {
+      return normalizeImgUrl(img.getAttribute('src') || img.src ||
+                             img.getAttribute('data-src') || '');
+    }
+    return '';
+  }
+
+  // Keep only the outermost elements, so a wrapper and its own child
+  // thumbnail are not counted as two items.
+  function outermost(els) {
+    var out = [];
+    for (var i = 0; i < els.length; i++) {
+      var nested = false;
+      for (var j = 0; j < els.length; j++) {
+        if (i !== j && els[j].contains(els[i])) { nested = true; break; }
+      }
+      if (!nested) out.push(els[i]);
+    }
+    return out;
+  }
+
+  // Keep only the innermost elements: one that contains another match is a
+  // container around the item thumbnails, not an item itself.
+  function innermost(els) {
+    return els.filter(function (el) {
+      for (var i = 0; i < els.length; i++) {
+        if (els[i] !== el && el.contains(els[i])) return false;
+      }
+      return true;
+    });
+  }
+
+  // A multi-item order card renders one thumbnail per product (often with no
+  // product title at all). Returns every thumbnail URL in display order plus
+  // the number of items, so the app can show them all instead of only the first.
+  function collectItemImages(card) {
+    var els = Array.prototype.slice.call(card.querySelectorAll('.order-item-content-img'));
+    var usedFallback = false;
+    if (els.length < 2) {
+      // Layout fallback: thumbnails under a different class name. Only trust
+      // large, distinct images outside the header/store/button areas so small
+      // icons (store badge, arrows) never turn a single item into several.
+      var scope = card.querySelector('.order-item-content') || card;
+      var cand = Array.prototype.slice
+        .call(scope.querySelectorAll('img, [style*="background-image"]'))
+        .filter(function (e) {
+          if (e.closest && e.closest('[class*="order-item-header"], [class*="order-item-store"], [class*="order-item-btn"]')) return false;
+          try {
+            var r = e.getBoundingClientRect();
+            return r.width >= 40 && r.height >= 40;
+          } catch (_) { return false; }
+        });
+      cand = outermost(cand);
+      var distinct = Object.create(null);
+      cand.forEach(function (e) { var u = itemImageUrl(e); if (u) distinct[u] = true; });
+      if (cand.length >= 2 && Object.keys(distinct).length >= 2 && cand.length > els.length) {
+        els = cand;
+        usedFallback = true;
+      }
+    }
+    els = usedFallback ? els : innermost(els);
+    var urls = [];
+    for (var k = 0; k < els.length && urls.length < MAX_ITEM_IMAGES; k++) {
+      var u = itemImageUrl(els[k]);
+      if (u) urls.push(u);
+    }
+    if (!urls.length) {
+      // Legacy fallback: the first <img> anywhere in the card.
+      var imgEl = card.querySelector('img');
+      var iu = imgEl ? normalizeImgUrl(imgEl.getAttribute('src') || imgEl.src || '') : '';
+      if (iu) urls.push(iu);
+    }
+    if (els.length > 1 && !loggedMultiItemCard) {
+      loggedMultiItemCard = true;
+      console.log('[Ali] multi-item card: items=' + els.length + ' images=' + urls.length +
+        ' viaFallback=' + usedFallback + ' outerHTML(1.5k)=' +
+        (card.outerHTML || '').slice(0, 1500));
+    }
+    return { urls: urls, count: Math.max(els.length, urls.length, 1) };
+  }
+
   // Each AliExpress order card is `<div class="order-item">` (or
   // `<a class="order-item order-item-mobile">` in the mobile variant). Inside:
   //   * `.order-item-header-right-info` carries "Order ID: <digits>" + "Order date: ..."
@@ -688,18 +795,10 @@
         }
       }
 
-      // 3) Image — extract URL from the inline background-image style.
-      var imageUrl = '';
-      var imgDiv = card.querySelector('.order-item-content-img');
-      if (imgDiv) {
-        var bg = (imgDiv.style && imgDiv.style.backgroundImage) || '';
-        var um = bg.match(/url\(["']?([^"')]+)["']?\)/);
-        if (um) imageUrl = um[1];
-      }
-      if (!imageUrl) {
-        var imgEl = card.querySelector('img');
-        if (imgEl) imageUrl = imgEl.getAttribute('src') || imgEl.src || '';
-      }
+      // 3) Images — one thumbnail per item in the order.
+      var itemImages = collectItemImages(card);
+      var imageUrls = itemImages.urls;
+      var imageUrl = imageUrls.length ? imageUrls[0] : '';
 
       // 4) Order date — plain text "Order date: <text>" inside the header.
       var dateText = '';
@@ -722,6 +821,8 @@
         orderId: orderId,
         name: (name || '').trim(),
         imageUrl: imageUrl,
+        imageUrls: imageUrls,
+        itemCount: itemImages.count,
         orderStatus: 0,
         orderDateText: dateText,
         statusText: statusText
@@ -1196,12 +1297,15 @@
       if (!CFG.domListingEnabled) return fetchNextPage();
       // Each tab has its own page-budget from settings. 0 = skip the tab.
       // seenIds dedupes if an order appears in multiple tabs.
+      var tabsAttempted = 0;   // tabs with a non-zero budget
+      var tabsMatched = 0;     // of those, how many were actually found on the page
       function scrapeTab(matcher, debugName, maxPasses) {
         if (maxPasses <= 0) {
           console.log('[Ali] skipping "' + debugName + '" tab (budget=0)');
           dlog('tab="' + debugName + '" SKIP budget=0');
           return Promise.resolve();
         }
+        tabsAttempted++;
         var before = all.length;
         var tabStart = now();
         dlog('tab="' + debugName + '" START budget=' + maxPasses +
@@ -1217,6 +1321,7 @@
               fmtMs(now() - tabStart));
             return;
           }
+          tabsMatched++;
           return expandAndExtract(maxPasses, debugName).then(function () {
             var tabMs = now() - tabStart;
             console.log('[Ali] "' + debugName + '" done, total=' + all.length +
@@ -1235,6 +1340,14 @@
             try { dumpPostExpandDomState(); } catch (e) {
               console.log('[Ali] dumpPostExpandDomState threw: ' + (e && e.message));
             }
+          }
+          // None of the order tabs exist on this page. That is not "you have
+          // no orders" — it means we are not looking at the orders list at
+          // all (signed out without a redirect, an interstitial, or AliExpress
+          // changed its layout). Reporting a clean completion here made the
+          // app record "connected" after reading nothing.
+          if (tabsAttempted > 0 && tabsMatched === 0) {
+            throw new Error('Order tabs not found (not signed in, or AliExpress changed its layout)');
           }
           // No "all"-tab fallback: tabs are explicitly per-budget; falling
           // back to statusTab:'all' would pull in unwanted older orders.
@@ -1344,6 +1457,8 @@
           orderId: o.orderId,
           name: o.name,
           imageUrl: o.imageUrl || null,
+          imageUrls: o.imageUrls || (o.imageUrl ? [o.imageUrl] : []),
+          itemCount: o.itemCount || 1,
           trackingNumber: tn,
           orderCreatedAt: parseOrderDate(o.orderDateText),
           statusText: o.statusText || ''
