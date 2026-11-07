@@ -47,7 +47,7 @@ fun PackagePhoto(
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val itemUris = pkg.itemPhotoUris
         when {
-            pkg.isMultiItem && itemUris.size > 1 -> ItemMosaic(
+            pkg.isMultiItem && itemUris.size > 1 -> PhotoMosaic(
                 uris = itemUris,
                 totalItems = pkg.itemCount
             )
@@ -91,14 +91,28 @@ fun PackagePhoto(
 
 private val TileGap = 1.5.dp
 
+/**
+ * Two to four photos tiled into one square (fills the box the caller sized).
+ * When there are more items than tiles, the last tile reads "+N". Fewer than
+ * two photos is just that photo.
+ */
 @Composable
-private fun ItemMosaic(uris: List<String>, totalItems: Int) {
+fun PhotoMosaic(uris: List<String>, totalItems: Int, modifier: Modifier = Modifier) {
+    if (uris.size < 2) {
+        AsyncImage(
+            model = uris.firstOrNull(),
+            contentDescription = null,
+            modifier = modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+        return
+    }
     val shown = uris.take(4)
     // The fourth tile stands in for every item beyond the first three.
     val hiddenBehindLast = if (totalItems > 4 && shown.size == 4) totalItems - 3 else 0
 
     Row(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(TileGap)
     ) {
         when (shown.size) {

@@ -2,8 +2,11 @@ package com.michlind.packagetracker.ui.navigation
 
 sealed class Screen(val route: String) {
     data object Home : Screen("home")
-    data object Detail : Screen("detail/{packageId}") {
-        fun createRoute(packageId: Long) = "detail/$packageId"
+    data object Detail : Screen("detail/{packageId}?single={single}") {
+        // [single] opens just that one package even when it ships inside a
+        // combined package. Without it, a combined package opens as a whole.
+        fun createRoute(packageId: Long, single: Boolean = false) =
+            "detail/$packageId?single=$single"
     }
     data object AddEdit : Screen("add_edit?packageId={packageId}") {
         fun createRoute(packageId: Long? = null) =

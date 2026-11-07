@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [PackageEntity::class, TrackingSmsEntity::class],
-    version = 9,
+    version = 11,
     exportSchema = false
 )
 abstract class PackageDatabase : RoomDatabase() {
@@ -64,6 +64,20 @@ abstract class PackageDatabase : RoomDatabase() {
                 // hand or automatically on DELIVERED). Rows imported as already
                 // completed carry 0 and stay at the bottom.
                 db.execSQL("UPDATE packages SET receivedAt = lastUpdated WHERE isReceived = 1")
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE packages ADD COLUMN priceAmount REAL")
+                db.execSQL("ALTER TABLE packages ADD COLUMN priceCurrency TEXT")
+                db.execSQL("ALTER TABLE packages ADD COLUMN storeName TEXT")
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE packages ADD COLUMN aliUrl TEXT")
             }
         }
 

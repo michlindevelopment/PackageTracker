@@ -17,7 +17,14 @@ data class AliOrderImport(
     // Number of items in the order as shown on the card. Gson bypasses
     // constructor defaults for this class, so a missing value arrives as 0 —
     // always read it through coerceAtLeast(1).
-    val itemCount: Int = 1
+    val itemCount: Int = 1,
+    // Order total as printed on the card ("Total: ₪ 108.40") and the seller's
+    // store name. Null when the card didn't show them or the script is older.
+    val priceAmount: Double? = null,
+    val priceCurrency: String? = null,
+    val storeName: String? = null,
+    // Product page when the order card links to exactly one product, else null.
+    val itemUrl: String? = null
 )
 
 enum class ImportResult { ADDED, UPGRADED, SKIPPED, FAILED }

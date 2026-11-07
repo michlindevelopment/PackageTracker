@@ -49,5 +49,9 @@ data class PackageEntity(
     // JSON array of local image URIs, one per item thumbnail, or null.
     val itemPhotosJson: String? = null,
     // Epoch ms of the moment the package moved to Received; 0 = unknown.
-    @ColumnInfo(defaultValue = "0") val receivedAt: Long = 0L
+    @ColumnInfo(defaultValue = "0") val receivedAt: Long = 0L,
+    val priceAmount: Double? = null,
+    val priceCurrency: String? = null,
+    val storeName: String? = null,
+    val aliUrl: String? = null
 )

@@ -70,8 +70,6 @@ fun PackageCard(
     onLongClick: (() -> Unit)? = null,
     isRefreshing: Boolean = false
 ) {
-    val nameTooltipState = rememberTooltipState(isPersistent = true)
-    val tooltipScope = rememberCoroutineScope()
     val (statusColor, _) = pkg.status.colorAndIcon()
     val gradient = Brush.linearGradient(
         colors = listOf(
@@ -124,45 +122,19 @@ fun PackageCard(
                 modifier = Modifier.weight(1f).heightIn(min = 82.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Text(
-                        text = pkg.name.ifBlank { pkg.trackingNumber },
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 20.sp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (pkg.name.isNotBlank()) {
-                        TooltipBox(
-                            positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
-                            tooltip = {
-                                RichTooltip {
-                                    Text(pkg.name)
-                                }
-                            },
-                            state = nameTooltipState
-                        ) {
-                            IconButton(
-                                onClick = { tooltipScope.launch { nameTooltipState.show() } },
-                                modifier = Modifier.size(22.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Info,
-                                    contentDescription = "Show full item name",
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                // Two lines, since the info icon that used to reveal the full
+                // name is gone. The full name is also on the detail screen.
+                Text(
+                    text = pkg.name.ifBlank { pkg.trackingNumber },
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 pkg.lastEvent?.let { event ->
                     Text(

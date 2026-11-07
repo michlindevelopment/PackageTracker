@@ -9,6 +9,7 @@ import com.michlind.packagetracker.domain.repository.PackageRepository
 import com.michlind.packagetracker.domain.usecase.AddPackageUseCase
 import com.michlind.packagetracker.domain.usecase.TrackPackageUseCase
 import com.michlind.packagetracker.domain.usecase.UpdatePackageUseCase
+import com.michlind.packagetracker.util.Money
 import com.michlind.packagetracker.util.RemoteImageDownloader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +32,15 @@ class AddEditViewModel @Inject constructor(
 
     private val _trackingNumber = MutableStateFlow("")
     val trackingNumber: StateFlow<String> = _trackingNumber.asStateFlow()
+
+    // Price as typed. Kept as text so a half-typed "12." isn't rewritten
+    // under the user's cursor; parsed with Money.parseAmount on save.
+    private val _price = MutableStateFlow("")
+    val price: StateFlow<String> = _price.asStateFlow()
+
+    // Symbol shown in front of the price field.
+    private val _currency = MutableStateFlow(Money.symbolFor(Money.defaultCurrencyCode()))
+    val currency: StateFlow<String> = _currency.asStateFlow()
 
     private val _photoUri = MutableStateFlow<String?>(null)
     val photoUri: StateFlow<String?> = _photoUri.asStateFlow()
@@ -63,10 +73,15 @@ class AddEditViewModel @Inject constructor(
             _name.value = pkg.name
             _trackingNumber.value = pkg.trackingNumber
             _photoUri.value = pkg.photoUri
+            _price.value = pkg.priceAmount?.let { Money.plain(it) }.orEmpty()
+            pkg.priceCurrency?.takeIf { it.isNotBlank() }?.let { _currency.value = Money.symbolFor(it) }
         }
     }
 
     fun updateName(value: String) { _name.value = value }
+    fun updatePrice(value: String) {
+        _price.value = value.filter { it.isDigit() || it == '.' || it == ',' }
+    }
     fun updateTrackingNumber(value: String) { _trackingNumber.value = value }
     fun updatePhotoUri(uri: String?) { _photoUri.value = uri }
 
@@ -113,6 +128,7 @@ class AddEditViewModel @Inject constructor(
             val existing = existingPackage
             existing?.status == PackageStatus.NOT_YET_SENT
             val hasTrackingNumber = tn.isNotBlank()
+            val priceValue = Money.parseAmount(_price.value)?.takeIf { it > 0.0 }
 
             // Determine status: prefer fresh tracking result, then preserve existing, fall back
             val resolvedStatus = result?.status
@@ -146,7 +162,16 @@ class AddEditViewModel @Inject constructor(
                 // back into a single-item one.
                 itemCount = existing?.itemCount ?: 1,
                 itemPhotoUris = existing?.itemPhotoUris ?: emptyList(),
-                receivedAt = existing?.receivedAt ?: 0L
+                receivedAt = existing?.receivedAt ?: 0L,
+                priceAmount = priceValue,
+                priceCurrency = priceValue?.let {
+                    existing?.priceCurrency?.takeIf { c -> c.isNotBlank() }
+                        ?: Money.defaultCurrencyCode()
+                },
+                storeName = existing?.storeName,
+                // Saving clears externalOrderId, so keep the AliExpress link
+                // in aliUrl or editing a package would lose it.
+                aliUrl = existing?.aliLink
             )
 
             val savedId = if (editingPackageId != null) {

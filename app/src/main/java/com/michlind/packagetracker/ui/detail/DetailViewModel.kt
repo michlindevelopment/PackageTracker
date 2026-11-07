@@ -63,6 +63,36 @@ class DetailViewModel @Inject constructor(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
+    // Every package that ships under this one's tracking number. More than
+    // one means a combined package; the screen then shows all of them instead
+    // of only the package that was tapped.
+    // True when opened from one specific item (a row inside a combined card,
+    // a search hit): show only that package even though it has siblings.
+    private val singleMode: Boolean = savedStateHandle.get<Boolean>("single") ?: false
+
+    private fun initialGroup(): List<TrackedPackage> {
+        val first = initialCached ?: return emptyList()
+        if (singleMode) return listOf(first)
+        val siblings = repository.peekByTrackingNumber(first.trackingNumber)
+        return if (siblings.size > 1) siblings.sortedBy { it.name.lowercase() } else listOf(first)
+    }
+
+    private val _group = MutableStateFlow(initialGroup())
+    val group: StateFlow<List<TrackedPackage>> = _group.asStateFlow()
+
+    // How many packages share this tracking number, so a single-item view can
+    // say it belongs to a combined package and link to the whole.
+    private val _siblingCount = MutableStateFlow(1)
+    val siblingCount: StateFlow<Int> = _siblingCount.asStateFlow()
+
+    private suspend fun loadGroup(pkg: TrackedPackage) {
+        val siblings = repository.getPackagesByTrackingNumber(pkg.trackingNumber)
+        _siblingCount.value = siblings.size.coerceAtLeast(1)
+        _group.value =
+            if (!singleMode && siblings.size > 1) siblings.sortedBy { it.name.lowercase() }
+            else listOf(pkg)
+    }
+
     private val _refreshFailure = MutableStateFlow<RefreshFailure?>(null)
     val refreshFailure: StateFlow<RefreshFailure?> = _refreshFailure.asStateFlow()
 
@@ -126,6 +156,7 @@ class DetailViewModel @Inject constructor(
                         pkg.trackingNumber.takeIf { it.isNotBlank() },
                         pkg.localTrackingNumber?.takeIf { it.isNotBlank() }
                     )
+                    loadGroup(pkg)
                 }
                 _uiState.value !is DetailUiState.Success -> {
                     _uiState.value = DetailUiState.Error("Package not found")
@@ -196,6 +227,7 @@ class DetailViewModel @Inject constructor(
             val pkg = repository.getPackageById(packageId)
             if (pkg != null) {
                 _uiState.value = DetailUiState.Success(pkg)
+                loadGroup(pkg)
             }
             _isRefreshing.value = false
         }
@@ -208,13 +240,17 @@ class DetailViewModel @Inject constructor(
         }
     }
 
-    fun delete(packageId: Long) {
+    /** Deletes the whole shipment: every order in a combined package. */
+    fun deleteAll() {
         viewModelScope.launch {
-            // Detail-screen delete has no undo — clean up the image immediately.
-            val photoUris = (_uiState.value as? DetailUiState.Success)?.pkg?.allPhotoUris.orEmpty()
-            deletePackage(packageId)
-            photoUris.forEach { imageDownloader.delete(it) }
+            val orders = _group.value.ifEmpty {
+                listOfNotNull((_uiState.value as? DetailUiState.Success)?.pkg)
+            }
+            // Detail-screen delete has no undo, so clean up the images now.
+            orders.forEach { deletePackage(it.id) }
+            orders.flatMap { it.allPhotoUris }.distinct().forEach { imageDownloader.delete(it) }
             _deleted.value = true
         }
     }
+
 }

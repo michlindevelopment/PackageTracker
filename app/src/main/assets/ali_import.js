@@ -498,6 +498,39 @@
     return isNaN(t) ? 0 : t;
   }
 
+  // Date-shaped tokens we trust. AliExpress prints "Nov 6, 2026"; the other
+  // two cover the same date in other locales.
+  var DATE_SHAPES = [
+    /\b([A-Z][a-z]{2,8}\.?\s+\d{1,2},?\s+\d{4})\b/,   // Nov 6, 2026
+    /\b(\d{1,2}\s+[A-Z][a-z]{2,8}\.?,?\s+\d{4})\b/,    // 6 Nov 2026
+    /\b(\d{4}-\d{2}-\d{2})\b/                          // 2026-11-06
+  ];
+
+  function matchDateShape(s) {
+    for (var i = 0; i < DATE_SHAPES.length; i++) {
+      var m = s.match(DATE_SHAPES[i]);
+      if (m && !isNaN(new Date(m[1]).getTime())) return m[1];
+    }
+    return '';
+  }
+
+  // The card header used to read "Order date: <date>" and now reads
+  // "Date: <date>" (next to "Ref. Number: <id>"). Matching only the old label
+  // left every order with no date, which dropped every package out of the
+  // delivery-time statistics and broke date sorting. Accept either label, and
+  // for the small header block fall back to any date-shaped text in it.
+  // [labelOnly] stops a whole-card search from latching onto an unrelated
+  // date such as an estimated delivery day.
+  function findOrderDateText(text, labelOnly) {
+    text = text || '';
+    var lab = text.match(/\b(?:order\s+)?date\b[:\s]+([^\n]+)/i);
+    if (lab) {
+      var viaLabel = matchDateShape(lab[1]);
+      if (viaLabel) return viaLabel;
+    }
+    return labelOnly ? '' : matchDateShape(text);
+  }
+
   // Classify the AliExpress card status. The three statuses we care about:
   //   "Ready to ship"     -> not yet sent (no tracking number to look up)
   //   "Awaiting delivery" -> in transit (default; falls through both checks)
@@ -671,6 +704,48 @@
     return { urls: urls, count: Math.max(els.length, urls.length, 1) };
   }
 
+  // "108.40" / "1,234.56" / "1.234,56" / "12,34" -> number, or null.
+  // Whichever of dot or comma comes last is the decimal mark; a lone comma
+  // or dot followed by exactly three digits is a thousands separator.
+  function normalizeAmount(tok) {
+    var lastDot = tok.lastIndexOf('.');
+    var lastComma = tok.lastIndexOf(',');
+    var dec = -1;
+    if (lastDot >= 0 && lastComma >= 0) dec = Math.max(lastDot, lastComma);
+    else if (lastComma >= 0) dec = (tok.length - lastComma - 1 === 3) ? -1 : lastComma;
+    else if (lastDot >= 0) {
+      var multiDots = tok.indexOf('.') !== lastDot;
+      dec = (tok.length - lastDot - 1 === 3 && multiDots) ? -1 : lastDot;
+    }
+    var digits = dec < 0
+      ? tok.replace(/[^\d]/g, '')
+      : tok.slice(0, dec).replace(/[^\d]/g, '') + '.' + tok.slice(dec + 1).replace(/[^\d]/g, '');
+    var n = parseFloat(digits);
+    return isNaN(n) ? null : n;
+  }
+
+  // Order total from card text such as "Total:₪ 108.40", "Total: US $12.34"
+  // or "Total: 12,34 EUR". Returns {amount, currency} or null. The currency
+  // is whatever short token sits next to the number, exactly as printed.
+  function parsePriceText(text) {
+    var m = (text || '').match(/\bTotal\b\s*:?\s*([^\n]{1,40})/i);
+    if (!m) return null;
+    var seg = m[1];
+    var nm = seg.match(/\d[\d.,\u00a0\u202f ]*\d|\d/);
+    if (!nm) return null;
+    var amount = normalizeAmount(nm[0].replace(/[\u00a0\u202f ]/g, ''));
+    if (amount === null || amount <= 0) return null;
+    var before = seg.slice(0, nm.index).replace(/^[:\s\u00a0]+|[:\s\u00a0]+$/g, '');
+    var currency = '';
+    if (before.length > 0 && before.length <= 6) {
+      currency = before;
+    } else {
+      var after = seg.slice(nm.index + nm[0].length).trim().split(/\s+/)[0] || '';
+      if (after.length > 0 && after.length <= 4) currency = after;
+    }
+    return { amount: amount, currency: currency };
+  }
+
   // Each AliExpress order card is `<div class="order-item">` (or
   // `<a class="order-item order-item-mobile">` in the mobile variant). Inside:
   //   * `.order-item-header-right-info` carries "Order ID: <digits>" + "Order date: ..."
@@ -800,14 +875,33 @@
       var imageUrls = itemImages.urls;
       var imageUrl = imageUrls.length ? imageUrls[0] : '';
 
-      // 4) Order date — plain text "Order date: <text>" inside the header.
-      var dateText = '';
+      // 4) Order date — "Date: <date>" (formerly "Order date: <date>") in the header.
       var headerInfoEl = card.querySelector('.order-item-header-right-info');
       var headerInfoTxt = headerInfoEl
         ? (headerInfoEl.innerText || headerInfoEl.textContent || '')
-        : (card.innerText || card.textContent || '');
-      var dm = headerInfoTxt.match(/Order date[:\s]+([^\n]+)/i);
-      if (dm) dateText = dm[1].trim();
+        : '';
+      var dateText = findOrderDateText(headerInfoTxt, false) ||
+        findOrderDateText(card.innerText || card.textContent || '', true);
+
+      // 4b) Order total ("Total:₪ 108.40") and the seller's store name.
+      var priceInfo = parsePriceText(card.innerText || card.textContent || '');
+      var storeEl = card.querySelector('.order-item-store-name');
+      var storeName = storeEl ? (storeEl.innerText || storeEl.textContent || '').trim() : '';
+
+      // 4c) The product page. Product images and titles link to
+      // /item/<id>.html. When the card links to exactly one product that is the
+      // item page; several products (or none found) leave it empty and the app
+      // links the order page instead.
+      var itemIds = {};
+      var itemLinks = card.querySelectorAll('a[href*="/item/"]');
+      for (var ii = 0; ii < itemLinks.length; ii++) {
+        var itemMatch = (itemLinks[ii].getAttribute('href') || '').match(/\/item\/(\d{6,})\.html/);
+        if (itemMatch) itemIds[itemMatch[1]] = true;
+      }
+      var itemIdList = Object.keys(itemIds);
+      var itemUrl = itemIdList.length === 1
+        ? 'https://www.aliexpress.com/item/' + itemIdList[0] + '.html'
+        : '';
 
       // 5) Status text — visible on each card (e.g. "Awaiting delivery",
       //    "Awaiting shipment", "Awaiting feedback", "Order completed").
@@ -825,7 +919,11 @@
         itemCount: itemImages.count,
         orderStatus: 0,
         orderDateText: dateText,
-        statusText: statusText
+        statusText: statusText,
+        priceAmount: priceInfo ? priceInfo.amount : null,
+        priceCurrency: priceInfo ? priceInfo.currency : '',
+        storeName: storeName,
+        itemUrl: itemUrl
       });
     }
     var statusBreakdown = {};
@@ -1461,7 +1559,11 @@
           itemCount: o.itemCount || 1,
           trackingNumber: tn,
           orderCreatedAt: parseOrderDate(o.orderDateText),
-          statusText: o.statusText || ''
+          statusText: o.statusText || '',
+          priceAmount: (typeof o.priceAmount === 'number') ? o.priceAmount : null,
+          priceCurrency: o.priceCurrency || null,
+          storeName: o.storeName || null,
+          itemUrl: o.itemUrl || null
         };
         try { BRIDGE.onOrder(JSON.stringify(payload), i + 1, all.length); } catch (_) {}
       });

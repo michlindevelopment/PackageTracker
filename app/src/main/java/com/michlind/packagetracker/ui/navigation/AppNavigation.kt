@@ -75,6 +75,10 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 onPackageClick = { id ->
                     navController.navigateFromUser(Screen.Detail.createRoute(id))
                 },
+                // An individual item inside a combined card opens on its own.
+                onOrderClick = { id ->
+                    navController.navigateFromUser(Screen.Detail.createRoute(id, single = true))
+                },
                 onAddClick = {
                     navController.navigateFromUser(Screen.AddEdit.createRoute())
                 },
@@ -103,8 +107,9 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
         composable(Screen.Search.route) {
             SearchScreen(
                 onBack = { navController.popBackStack() },
+                // A search hit is one specific item, so open that item.
                 onPackageClick = { id ->
-                    navController.navigateFromUser(Screen.Detail.createRoute(id))
+                    navController.navigateFromUser(Screen.Detail.createRoute(id, single = true))
                 }
             )
         }
@@ -150,7 +155,13 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
 
         composable(
             route = Screen.Detail.route,
-            arguments = listOf(navArgument("packageId") { type = NavType.LongType })
+            arguments = listOf(
+                navArgument("packageId") { type = NavType.LongType },
+                navArgument("single") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
         ) { backStackEntry ->
             val packageId = backStackEntry.arguments?.getLong("packageId") ?: return@composable
             DetailScreen(
@@ -163,6 +174,12 @@ fun AppNavigation(startPackageId: Long? = null, sharedImageUri: Uri? = null) {
                 },
                 onVerifyCaptcha = { trackingNumber ->
                     navController.navigateFromUser(Screen.Captcha.createRoute(trackingNumber))
+                },
+                onOpenOrder = { id ->
+                    navController.navigateFromUser(Screen.Detail.createRoute(id, single = true))
+                },
+                onOpenCombined = { id ->
+                    navController.navigateFromUser(Screen.Detail.createRoute(id))
                 },
                 onBack = { navController.popBackStack() }
             )

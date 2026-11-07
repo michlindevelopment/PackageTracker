@@ -217,6 +217,14 @@ class PackageRepositoryImpl @Inject constructor(
     override suspend fun getNonReceivedTrackingSnapshot(): Map<Long, String> =
         dao.getNonReceivedTrackingSnapshot().associate { it.id to it.trackingNumber }
 
+    override fun peekByTrackingNumber(trackingNumber: String): List<TrackedPackage> =
+        if (trackingNumber.isBlank()) emptyList()
+        else cache.values.filter { it.trackingNumber == trackingNumber }
+
+    override suspend fun getPackagesByTrackingNumber(trackingNumber: String): List<TrackedPackage> =
+        if (trackingNumber.isBlank()) emptyList()
+        else dao.getByTrackingNumber(trackingNumber).map { it.toDomain() }
+
     override suspend fun getFirstByTrackingNumber(trackingNumber: String): TrackedPackage? =
         dao.getByTrackingNumber(trackingNumber).firstOrNull()?.toDomain()
 
@@ -320,7 +328,11 @@ class PackageRepositoryImpl @Inject constructor(
             rawApiJson = rawApiJson,
             itemCount = itemCount.coerceAtLeast(1),
             itemPhotoUris = itemPhotos,
-            receivedAt = receivedAt
+            receivedAt = receivedAt,
+            priceAmount = priceAmount,
+            priceCurrency = priceCurrency,
+            storeName = storeName,
+            aliUrl = aliUrl
         )
     }
 
@@ -351,6 +363,10 @@ class PackageRepositoryImpl @Inject constructor(
         rawApiJson = rawApiJson,
         itemCount = itemCount,
         itemPhotosJson = itemPhotoUris.takeIf { it.isNotEmpty() }?.let { gson.toJson(it) },
-        receivedAt = receivedAt
+        receivedAt = receivedAt,
+        priceAmount = priceAmount,
+        priceCurrency = priceCurrency,
+        storeName = storeName,
+        aliUrl = aliUrl
     )
 }

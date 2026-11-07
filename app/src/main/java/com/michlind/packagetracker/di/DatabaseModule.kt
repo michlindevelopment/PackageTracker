@@ -32,7 +32,9 @@ object DatabaseModule {
                 PackageDatabase.MIGRATION_5_6,
                 PackageDatabase.MIGRATION_6_7,
                 PackageDatabase.MIGRATION_7_8,
-                PackageDatabase.MIGRATION_8_9
+                PackageDatabase.MIGRATION_8_9,
+                PackageDatabase.MIGRATION_9_10,
+                PackageDatabase.MIGRATION_10_11
             )
             .build()
 

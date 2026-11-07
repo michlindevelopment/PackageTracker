@@ -46,6 +46,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
@@ -121,6 +122,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -142,6 +144,8 @@ import com.michlind.packagetracker.domain.model.PackageStatus
 import com.michlind.packagetracker.domain.model.TrackedPackage
 import com.michlind.packagetracker.domain.model.TrackingSms
 import com.michlind.packagetracker.ui.components.PackagePhoto
+import com.michlind.packagetracker.ui.components.PhotoMosaic
+import com.michlind.packagetracker.util.Money
 import com.michlind.packagetracker.ui.components.SkeletonDetailHeader
 import com.michlind.packagetracker.ui.components.TimelineItem
 import com.michlind.packagetracker.ui.components.colorAndIcon
@@ -171,6 +175,15 @@ private fun openSmsPlugin(context: android.content.Context) {
     )
 }
 
+/** Opens an AliExpress page in the browser, or in the AliExpress app if it claims the link. */
+private fun openAliExpress(context: android.content.Context, url: String) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
+
 private val STAGE_LABELS = listOf(
     "Order\nPlaced", "Shipped", "Export\nCustoms", "In Flight", "Import\nCustoms", "Delivery", "Delivered"
 )
@@ -182,12 +195,16 @@ fun DetailScreen(
     onEditClick: (Long) -> Unit,
     onShowRawResponse: () -> Unit,
     onVerifyCaptcha: (trackingNumber: String) -> Unit,
+    onOpenOrder: (Long) -> Unit,
+    onOpenCombined: (Long) -> Unit,
     onBack: () -> Unit,
     viewModel: DetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val refreshFailure by viewModel.refreshFailure.collectAsStateWithLifecycle()
+    val group by viewModel.group.collectAsStateWithLifecycle()
+    val siblingCount by viewModel.siblingCount.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
     val smsList by viewModel.smsList.collectAsStateWithLifecycle()
     val smsPluginState by viewModel.smsPluginState.collectAsStateWithLifecycle()
@@ -240,13 +257,18 @@ fun DetailScreen(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text(stringResource(R.string.confirm_delete_title)) },
-            text = { Text(stringResource(R.string.confirm_delete_message)) },
+            text = {
+                Text(
+                    if (group.size > 1) "This deletes all ${group.size} orders in this combined package."
+                    else stringResource(R.string.confirm_delete_message)
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showDeleteDialog = false
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        viewModel.delete(packageId)
+                        viewModel.deleteAll()
                     }
                 ) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
@@ -259,13 +281,18 @@ fun DetailScreen(
     }
 
 
+    // The package on screen, falling back to the route id while still loading.
+    val currentId = (uiState as? DetailUiState.Success)?.pkg?.id ?: packageId
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    val title = (uiState as? DetailUiState.Success)?.pkg?.name
-                        ?.ifBlank { null }
-                        ?: "Detail"
+                    val title = if (group.size > 1) {
+                        "Combined package"
+                    } else {
+                        (uiState as? DetailUiState.Success)?.pkg?.name?.ifBlank { null } ?: "Detail"
+                    }
                     Text(title, maxLines = 1)
                 },
                 navigationIcon = {
@@ -274,8 +301,19 @@ fun DetailScreen(
                     }
                 },
                 actions = {
+                    // A single package: its AliExpress page, right at the top. A
+                    // combined package has one link per order on its Orders tab.
+                    val aliLink = (uiState as? DetailUiState.Success)?.pkg?.aliLink
+                    if (group.size <= 1 && aliLink != null) {
+                        IconButton(onClick = { openAliExpress(context, aliLink) }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.OpenInNew,
+                                contentDescription = "Open in AliExpress"
+                            )
+                        }
+                    }
                     IconButton(
-                        onClick = { if (!isRefreshing) viewModel.refresh(packageId) },
+                        onClick = { if (!isRefreshing) viewModel.refresh(currentId) },
                         enabled = !isRefreshing
                     ) {
                         if (isRefreshing) {
@@ -290,8 +328,11 @@ fun DetailScreen(
                             )
                         }
                     }
-                    IconButton(onClick = { onEditClick(packageId) }) {
-                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit_package))
+                    // A combined package has several orders; open one to edit it.
+                    if (group.size <= 1) {
+                        IconButton(onClick = { onEditClick(currentId) }) {
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit_package))
+                        }
                     }
                     IconButton(
                         onClick = {
@@ -343,6 +384,13 @@ fun DetailScreen(
             is DetailUiState.Success -> {
                 DetailContent(
                     pkg = state.pkg,
+                    group = group,
+                    onOpenAli = { url -> openAliExpress(context, url) },
+                    // Only a single-item view of a package that has siblings
+                    // links back up to the combined package.
+                    partOfCount = if (group.size <= 1) siblingCount else 0,
+                    onOpenOrder = onOpenOrder,
+                    onOpenCombined = { onOpenCombined(state.pkg.id) },
                     isRefreshing = isRefreshing,
                     paddingValues = paddingValues,
                     smsMessages = smsList,
@@ -370,6 +418,11 @@ fun DetailScreen(
 @Composable
 private fun DetailContent(
     pkg: TrackedPackage,
+    group: List<TrackedPackage>,
+    onOpenAli: (String) -> Unit,
+    partOfCount: Int,
+    onOpenOrder: (Long) -> Unit,
+    onOpenCombined: () -> Unit,
     isRefreshing: Boolean,
     paddingValues: PaddingValues,
     smsMessages: List<TrackingSms>,
@@ -393,8 +446,6 @@ private fun DetailContent(
         )
     }
 
-    val nameTooltipState = rememberTooltipState(isPersistent = true)
-    val tooltipScope = rememberCoroutineScope()
     // The Courier tab shows the Cainiao-reported destination carrier once
     // available, but stays visible beforehand so the local-courier tracking
     // number can always be entered (and so a once-seen carrier survives a
@@ -404,10 +455,24 @@ private fun DetailContent(
     // (getting the helper lives in Settings). NOT_GRANTED still shows it: the
     // helper is there, it just needs one more tap, and the tab says so.
     val smsAvailable = smsPluginState != SmsPluginState.NOT_INSTALLED
+    // A combined package is several orders under one tracking number. The
+    // screen shows all of them, not just whichever one was tapped.
+    val orders = group.ifEmpty { listOf(pkg) }
+    val isCombined = orders.size > 1
+    val totalItems = orders.sumOf { it.itemCount.coerceAtLeast(1) }
+    val headerThumbs = orders.flatMap { o ->
+        if (o.itemPhotoUris.size > 1) o.itemPhotoUris else listOfNotNull(o.photoUri)
+    }
+
+    // The Orders tab exists only for a combined package. A single package
+    // already shows its name, price, store and photos under the header, so a
+    // tab of its own would just repeat them.
     val trackingIndex = 0
-    val smsIndex = if (smsAvailable) 1 else -1
-    val courierIndex = if (smsAvailable) 2 else 1
-    val tabCount = if (smsAvailable) 3 else 2
+    var nextIndex = 1
+    val itemsIndex = if (isCombined) nextIndex++ else -1
+    val smsIndex = if (smsAvailable) nextIndex++ else -1
+    val courierIndex = nextIndex++
+    val tabCount = nextIndex
     val pagerState = rememberPagerState(pageCount = { tabCount })
     val tabScope = rememberCoroutineScope()
 
@@ -466,18 +531,28 @@ private fun DetailContent(
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .then(
-                        if (pkg.photoUri != null) {
-                            Modifier.clickable { fullImageUri = pkg.photoUri }
-                        } else Modifier
+                        when {
+                            // The photo is a mosaic of every order here, so
+                            // tapping it opens the list of them.
+                            isCombined -> Modifier.clickable {
+                                tabScope.launch { pagerState.animateScrollToPage(itemsIndex) }
+                            }
+                            pkg.photoUri != null -> Modifier.clickable { fullImageUri = pkg.photoUri }
+                            else -> Modifier
+                        }
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                PackagePhoto(
-                    pkg = pkg,
-                    placeholderTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    placeholderSize = 36.dp,
-                    contentDescription = "Package photo"
-                )
+                if (isCombined && headerThumbs.size >= 2) {
+                    PhotoMosaic(uris = headerThumbs, totalItems = totalItems)
+                } else {
+                    PackagePhoto(
+                        pkg = pkg,
+                        placeholderTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        placeholderSize = 36.dp,
+                        contentDescription = "Package photo"
+                    )
+                }
             }
             Column(modifier = Modifier.weight(1f)) {
                 val (color, icon) = pkg.status.colorAndIcon()
@@ -489,30 +564,6 @@ private fun DetailContent(
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = color
                     )
-                    if (pkg.name.isNotBlank()) {
-                        Spacer(Modifier.width(6.dp))
-                        TooltipBox(
-                            positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
-                            tooltip = {
-                                RichTooltip {
-                                    Text(pkg.name)
-                                }
-                            },
-                            state = nameTooltipState
-                        ) {
-                            IconButton(
-                                onClick = { tooltipScope.launch { nameTooltipState.show() } },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Info,
-                                    contentDescription = "Show full item name",
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
                 }
                 if (pkg.statusDescription.isNotBlank()) {
                     Text(
@@ -551,16 +602,26 @@ private fun DetailContent(
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
+                val facts = orderFacts(orders)
+                if (facts.isNotBlank()) {
+                    Text(
+                        text = facts,
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                if (partOfCount > 1) {
+                    Text(
+                        text = "One of $partOfCount orders shipping together  ·  View all",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .clickable(onClick = onOpenCombined)
+                    )
+                }
             }
-        }
-
-        // Multi-item AliExpress order: show every item, not just the first.
-        if (pkg.isMultiItem && pkg.itemPhotoUris.size > 1) {
-            OrderItemsStrip(
-                itemCount = pkg.itemCount,
-                itemPhotoUris = pkg.itemPhotoUris,
-                onItemClick = { fullImageUri = it }
-            )
         }
 
         // ETA + Shipping Progress collapse together when the user scrolls
@@ -574,6 +635,9 @@ private fun DetailContent(
                 fadeOut(animationSpec = tween(durationMillis = 200))
         ) {
             Column {
+                if (!isCombined) {
+                    SingleOrderBlock(pkg = pkg, onPhotoClick = { fullImageUri = it })
+                }
                 pkg.estimatedDeliveryTime?.let { eta ->
                     Card(
                         modifier = Modifier
@@ -650,6 +714,23 @@ private fun DetailContent(
                     }
                 }
             )
+            if (isCombined) Tab(
+                selected = pagerState.currentPage == itemsIndex,
+                onClick = { tabScope.launch { pagerState.animateScrollToPage(itemsIndex) } },
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Inventory2,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text("Orders (${orders.size})")
+                    }
+                }
+            )
             if (smsAvailable) {
             Tab(
                 selected = pagerState.currentPage == smsIndex,
@@ -704,6 +785,12 @@ private fun DetailContent(
             ) {
                 when (page) {
                     trackingIndex -> trackingHistoryItems(events = pkg.events)
+                    itemsIndex -> itemsTabItems(
+                        orders = orders,
+                        onPhotoClick = { fullImageUri = it },
+                        onOpenOrder = onOpenOrder,
+                        onOpenAli = onOpenAli
+                    )
                     smsIndex -> smsItems(
                         trackingNumber = pkg.trackingNumber,
                         messages = smsMessages,
@@ -743,37 +830,255 @@ private fun DetailContent(
     }
 }
 
+// What a single (non-combined) package is, right under the header: its full
+// name (the old info icon's job), when it was ordered, and a photo strip when
+// the order holds several items. Sits in the part that collapses on scroll.
 @Composable
-private fun OrderItemsStrip(
-    itemCount: Int,
-    itemPhotoUris: List<String>,
-    onItemClick: (String) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "$itemCount items in this order",
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            modifier = Modifier.padding(horizontal = 20.dp)
+private fun SingleOrderBlock(pkg: TrackedPackage, onPhotoClick: (String) -> Unit) {
+    val name = pkg.name.trim()
+    val ordered = pkg.createdAt.takeIf { it > 0L }?.let { "Ordered ${DateUtils.formatDate(it)}" }
+    val hasPhotos = pkg.isMultiItem && pkg.itemPhotoUris.size > 1
+    if (name.isEmpty() && ordered == null && !hasPhotos) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 12.dp)
+    ) {
+        if (name.isNotEmpty()) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        ordered?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        if (hasPhotos) {
+            Row(
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                pkg.itemPhotoUris.forEach { uri ->
+                    AsyncImage(
+                        model = uri,
+                        contentDescription = "Order item",
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { onPhotoClick(uri) },
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
+        }
+    }
+}
+
+// Sum of the known prices, one amount per currency ("₪216.80" or "₪100.00 + $12.00").
+// Orders with no price recorded are skipped, null if none has one.
+private fun totalPriceText(orders: List<TrackedPackage>): String? {
+    val priced = orders.filter { (it.priceAmount ?: 0.0) > 0.0 }
+    if (priced.isEmpty()) return null
+    return priced.groupBy { Money.canonical(it.priceCurrency) }.values.joinToString(" + ") { list ->
+        Money.format(list.sumOf { it.priceAmount ?: 0.0 }, list.first().priceCurrency)
+    }
+}
+
+// One line under the status: what is in the package and what it cost.
+private fun orderFacts(orders: List<TrackedPackage>): String {
+    val first = orders.first()
+    val parts = if (orders.size > 1) {
+        listOfNotNull(
+            "${orders.size} orders · ${orders.sumOf { it.itemCount.coerceAtLeast(1) }} items",
+            totalPriceText(orders)
         )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            itemPhotoUris.forEach { uri ->
-                AsyncImage(
-                    model = uri,
-                    contentDescription = "Order item",
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable { onItemClick(uri) },
-                    contentScale = ContentScale.Crop
+    } else {
+        listOfNotNull(
+            if (first.isMultiItem) "${first.itemCount} items" else null,
+            totalPriceText(orders),
+            first.storeName?.takeIf { it.isNotBlank() }
+        )
+    }
+    return parts.joinToString("  ·  ")
+}
+
+// The Orders tab, shown only for a combined package: the totals, then every
+// order with its photos, full name, store, price and date. Tapping an order
+// opens it on its own (where it can be edited or deleted); each has a link to
+// its AliExpress page.
+private fun LazyListScope.itemsTabItems(
+    orders: List<TrackedPackage>,
+    onPhotoClick: (String) -> Unit,
+    onOpenOrder: (Long) -> Unit,
+    onOpenAli: (String) -> Unit
+) {
+    item(key = "combined-summary") { CombinedSummaryCard(orders) }
+    items(orders, key = { it.id }) { order ->
+        OrderCard(
+            order = order,
+            onPhotoClick = onPhotoClick,
+            onOpen = { onOpenOrder(order.id) },
+            onOpenAli = onOpenAli
+        )
+    }
+}
+
+@Composable
+private fun CombinedSummaryCard(orders: List<TrackedPackage>) {
+    val items = orders.sumOf { it.itemCount.coerceAtLeast(1) }
+    val priced = orders.count { (it.priceAmount ?: 0.0) > 0.0 }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Combined package",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+            )
+            Text(
+                text = "${orders.size} orders · $items items",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            totalPriceText(orders)?.let { total ->
+                Text(
+                    text = "Total $total",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
+                if (priced < orders.size) {
+                    Text(
+                        text = "Price known for $priced of ${orders.size} orders",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+            }
+            Text(
+                text = "These orders ship together under one tracking number.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun OrderCard(
+    order: TrackedPackage,
+    onPhotoClick: (String) -> Unit,
+    onOpen: () -> Unit,
+    onOpenAli: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp)
+            // The whole card opens that one order.
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onOpen),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val photos = if (order.itemPhotoUris.size > 1) order.itemPhotoUris
+            else listOfNotNull(order.photoUri)
+            if (photos.isNotEmpty()) {
+                val side = if (photos.size == 1) 96.dp else 72.dp
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    photos.forEach { uri ->
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = "Order item",
+                            modifier = Modifier
+                                .size(side)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { onPhotoClick(uri) },
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                }
+            }
+
+            // The full name, never truncated. It replaces the old "i" icon.
+            Text(
+                text = order.name.ifBlank { order.trackingNumber.ifBlank { "Package" } },
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+            )
+            order.storeName?.takeIf { it.isNotBlank() }?.let { store ->
+                Text(
+                    text = store,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                )
+            }
+
+            Row(verticalAlignment = Alignment.Bottom) {
+                val price = order.priceAmount?.takeIf { it > 0.0 }
+                if (price != null) {
+                    Text(
+                        text = Money.format(price, order.priceCurrency),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Text(
+                        text = "Price not recorded",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+                val rest = listOfNotNull(
+                    if (order.isMultiItem) "${order.itemCount} items" else null,
+                    order.createdAt.takeIf { it > 0L }?.let { "Ordered ${DateUtils.formatDate(it)}" }
+                ).joinToString("  ·  ")
+                if (rest.isNotBlank()) {
+                    Text(
+                        text = rest,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                        modifier = Modifier.padding(start = 10.dp)
+                    )
+                }
+            }
+
+            order.aliLink?.let { link ->
+                TextButton(onClick = { onOpenAli(link) }) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("Open in AliExpress")
+                }
             }
         }
     }

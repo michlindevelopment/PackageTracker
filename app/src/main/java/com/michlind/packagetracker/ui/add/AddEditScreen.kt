@@ -92,6 +92,8 @@ fun AddEditScreen(
     val name by viewModel.name.collectAsStateWithLifecycle()
     val trackingNumber by viewModel.trackingNumber.collectAsStateWithLifecycle()
     val photoUri by viewModel.photoUri.collectAsStateWithLifecycle()
+    val price by viewModel.price.collectAsStateWithLifecycle()
+    val currency by viewModel.currency.collectAsStateWithLifecycle()
     val isTracking by viewModel.isTracking.collectAsStateWithLifecycle()
     val isSaving by viewModel.isSaving.collectAsStateWithLifecycle()
     val trackingResult by viewModel.trackingResult.collectAsStateWithLifecycle()
@@ -314,6 +316,20 @@ fun AddEditScreen(
                         }
                     }
                 }
+            )
+
+            // Optional price. Imported AliExpress orders arrive with one; this
+            // is for hand-added packages (and fixing an imported one).
+            OutlinedTextField(
+                value = price,
+                onValueChange = { viewModel.updatePrice(it) },
+                label = { Text("Price (optional)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                prefix = { Text(currency) },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                )
             )
 
             if (trackingResult != null) {

@@ -89,4 +89,19 @@ interface PackageRepository {
      * of starting with an empty timeline.
      */
     suspend fun getFirstByTrackingNumber(trackingNumber: String): TrackedPackage?
+
+    /**
+     * Every package sharing [trackingNumber] (a combined package), or an
+     * empty list for a blank number. The detail screen uses it to show the
+     * whole shipment instead of only the package that was tapped.
+     */
+    suspend fun getPackagesByTrackingNumber(trackingNumber: String): List<TrackedPackage>
+
+    /**
+     * Same as [getPackagesByTrackingNumber] but synchronous, from the warm
+     * in-memory snapshot. Lets the detail screen know on its very first frame
+     * whether it is showing a combined package, so it doesn't flash the
+     * single-package layout first.
+     */
+    fun peekByTrackingNumber(trackingNumber: String): List<TrackedPackage>
 }

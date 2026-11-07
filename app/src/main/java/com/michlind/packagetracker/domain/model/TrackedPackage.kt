@@ -38,9 +38,30 @@ data class TrackedPackage(
     // When the package moved to Received (epoch ms), used to keep the
     // Received tab ordered "last received on top". 0 = unknown, which sorts
     // below every known time.
-    val receivedAt: Long = 0L
+    val receivedAt: Long = 0L,
+    // What the order cost. [priceCurrency] is the token AliExpress printed
+    // ("₪", "US $") or a currency code for hand-typed prices.
+    val priceAmount: Double? = null,
+    val priceCurrency: String? = null,
+    // Seller's store, read from the AliExpress order card.
+    val storeName: String? = null,
+    // Product page on AliExpress, when the import saw exactly one product on
+    // the order card. See [aliLink] for what the app actually opens.
+    val aliUrl: String? = null
 ) {
     val isMultiItem: Boolean get() = itemCount > 1
+
+    // Where "Open in AliExpress" goes: the product page when we know it, else
+    // the order page built from the AliExpress order id (so every imported
+    // package has a link even before a re-sync). Null for packages that never
+    // came from AliExpress.
+    val aliLink: String?
+        get() = aliUrl?.takeIf { it.isNotBlank() }
+            ?: externalOrderId
+                ?.takeIf { it.startsWith("ali:") }
+                ?.removePrefix("ali:")
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "https://www.aliexpress.com/p/order/detail.html?orderId=$it" }
 
     // Every image file this package owns, for cleanup on delete.
     val allPhotoUris: List<String>

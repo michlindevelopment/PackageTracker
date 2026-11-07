@@ -128,6 +128,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeScreen(
     onPackageClick: (Long) -> Unit,
+    onOrderClick: (Long) -> Unit,
     onAddClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onSearchClick: () -> Unit = {},
@@ -361,7 +362,10 @@ fun HomeScreen(
             ?: stringResource(R.string.add_package)
         val sheetState = rememberModalBottomSheetState()
         ModalBottomSheet(
-            onDismissRequest = { },
+            onDismissRequest = {
+                actionMenuGroup = null
+                actionMenuPkg = null
+            },
             sheetState = sheetState
         ) {
             Column(modifier = Modifier.padding(bottom = 24.dp)) {
@@ -415,7 +419,10 @@ fun HomeScreen(
         val msgRes = if (newState) R.string.confirm_mark_received_message
                      else R.string.confirm_mark_not_received_message
         AlertDialog(
-            onDismissRequest = { },
+            onDismissRequest = {
+                pendingToggleGroup = null
+                pendingTogglePkg = null
+            },
             title = { Text(stringResource(titleRes)) },
             text = { Text(stringResource(msgRes)) },
             confirmButton = {
@@ -446,7 +453,10 @@ fun HomeScreen(
         val deletedMsg = if (count > 1) "$count packages deleted" else stringResource(R.string.package_deleted)
         val undoLabel = stringResource(R.string.undo)
         AlertDialog(
-            onDismissRequest = { },
+            onDismissRequest = {
+                pendingDeleteGroup = null
+                pendingDeletePkg = null
+            },
             title = { Text(if (count > 1) "Delete $count packages?" else "Delete package?") },
             text = { Text(stringResource(R.string.confirm_delete_message)) },
             confirmButton = {
@@ -710,6 +720,7 @@ fun HomeScreen(
                         notYetSent = notYetSent,
                         sortMode = sortMode,
                         onPackageClick = onPackageClick,
+                        onOrderClick = onOrderClick,
                         onGroupLongPress = { actionMenuGroup = it },
                         onPackageLongPress = { actionMenuPkg = it },
                         refreshingTrackingNumber = refreshingTn
@@ -720,6 +731,7 @@ fun HomeScreen(
                         emptyTitle = stringResource(R.string.empty_received),
                         emptySubtitle = stringResource(R.string.empty_received_sub),
                         onPackageClick = onPackageClick,
+                        onOrderClick = onOrderClick,
                         onLongPress = { actionMenuGroup = it },
                         refreshingTrackingNumber = refreshingTn
                     )
@@ -738,6 +750,7 @@ private fun GroupList(
     emptyTitle: String,
     emptySubtitle: String,
     onPackageClick: (Long) -> Unit,
+    onOrderClick: (Long) -> Unit,
     onLongPress: (PackageGroup) -> Unit,
     refreshingTrackingNumber: String?
 ) {
@@ -752,6 +765,7 @@ private fun GroupList(
                 PackageGroupCard(
                     group = group,
                     onPackageClick = onPackageClick,
+                    onOrderClick = onOrderClick,
                     onLongClick = { onLongPress(group) },
                     isRefreshing = refreshingTrackingNumber != null &&
                         refreshingTrackingNumber == group.trackingNumber,
@@ -781,6 +795,7 @@ private fun ActiveList(
     notYetSent: List<TrackedPackage>,
     sortMode: SortMode,
     onPackageClick: (Long) -> Unit,
+    onOrderClick: (Long) -> Unit,
     onGroupLongPress: (PackageGroup) -> Unit,
     onPackageLongPress: (TrackedPackage) -> Unit,
     refreshingTrackingNumber: String?
@@ -816,6 +831,7 @@ private fun ActiveList(
                 PackageGroupCard(
                     group = group,
                     onPackageClick = onPackageClick,
+                    onOrderClick = onOrderClick,
                     onLongClick = { onGroupLongPress(group) },
                     isRefreshing = refreshingTrackingNumber != null &&
                         refreshingTrackingNumber == group.trackingNumber,
@@ -835,6 +851,9 @@ private fun ActiveList(
 fun PackageGroupCard(
     group: PackageGroup,
     onPackageClick: (Long) -> Unit,
+    // Tapping one item inside a combined card. The card itself opens the whole
+    // combined package; an item opens on its own.
+    onOrderClick: (Long) -> Unit = onPackageClick,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     isRefreshing: Boolean = false
@@ -985,7 +1004,7 @@ fun PackageGroupCard(
 
             // Sub-items — image + title only, no status
             group.packages.forEach { pkg ->
-                SubPackageRow(pkg = pkg, onClick = { onPackageClick(pkg.id) })
+                SubPackageRow(pkg = pkg, onClick = { onOrderClick(pkg.id) })
             }
         }
     }

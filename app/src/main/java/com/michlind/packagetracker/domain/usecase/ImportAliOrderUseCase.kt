@@ -128,7 +128,13 @@ class ImportAliOrderUseCase @Inject constructor(
                         externalOrderId = externalId,
                         progressRate = sibling?.progressRate,
                         itemCount = itemCount,
-                        itemPhotoUris = itemPhotos
+                        itemPhotoUris = itemPhotos,
+                        priceAmount = order.priceAmount?.takeIf { it > 0.0 },
+                        priceCurrency = order.priceCurrency?.takeIf { it.isNotBlank() },
+                        storeName = order.storeName?.takeIf { it.isNotBlank() },
+                        // Only a single-product order links to its item page; a
+                        // multi-item order links to the order page (see aliLink).
+                        aliUrl = order.itemUrl?.takeIf { it.isNotBlank() && itemCount <= 1 }
                     )
                     val newId = repository.addPackage(pkg)
                     // Carrier-status fetch is no longer triggered inline.
@@ -209,6 +215,35 @@ class ImportAliOrderUseCase @Inject constructor(
                             updated = updated.copy(photoUri = photo)
                             reasons += "photo"
                         }
+                    }
+
+                    // Orders imported while the date scrape was broken have
+                    // createdAt = 0, which drops them from the delivery-time
+                    // statistics. Fill it in as soon as the card gives us one.
+                    if (existing.createdAt <= 0L && order.orderCreatedAt > 0L) {
+                        updated = updated.copy(createdAt = order.orderCreatedAt)
+                        reasons += "date"
+                    }
+
+                    // Price and store come off the card; fill them in for orders
+                    // imported before they were captured. Never overwrite: a
+                    // price the user typed by hand must win.
+                    val incomingPrice = order.priceAmount?.takeIf { it > 0.0 }
+                    if (existing.priceAmount == null && incomingPrice != null) {
+                        updated = updated.copy(
+                            priceAmount = incomingPrice,
+                            priceCurrency = order.priceCurrency?.takeIf { it.isNotBlank() }
+                        )
+                        reasons += "price"
+                    }
+                    if (existing.storeName.isNullOrBlank() && !order.storeName.isNullOrBlank()) {
+                        updated = updated.copy(storeName = order.storeName)
+                        reasons += "store"
+                    }
+                    val incomingLink = order.itemUrl?.takeIf { it.isNotBlank() && itemCount <= 1 }
+                    if (existing.aliUrl.isNullOrBlank() && incomingLink != null) {
+                        updated = updated.copy(aliUrl = incomingLink)
+                        reasons += "link"
                     }
 
                     // Orders imported before multi-item support (or whose card
