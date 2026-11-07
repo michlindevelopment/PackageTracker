@@ -727,7 +727,7 @@ private fun DetailContent(
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
-                        Text("Orders (${orders.size})")
+                        Text("Orders")
                     }
                 }
             )
