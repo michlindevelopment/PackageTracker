@@ -80,7 +80,7 @@
 
 | Code | Meaning |
 |---|---|
-| `CC_IM_START` | Destination clearance started |
+| `CC_IM_START` | Destination clearance started. **Advisory in the app:** Cainiao emits it when the paperwork is pre-filed, often hours before export clearance, so it does not change status |
 | `CC_IM_PROCESS` | Destination clearance in progress |
 | `CC_IM_SUCCESS` | Destination cleared |
 | `CC_IM_FAILURE` | Destination clearance fail |

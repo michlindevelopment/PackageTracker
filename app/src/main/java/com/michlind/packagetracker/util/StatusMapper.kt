@@ -35,10 +35,13 @@ import com.michlind.packagetracker.domain.model.PackageStatus
  *  4. **Import customs can start before the parcel leaves.** Cainiao files
  *     the customs data with the destination country while the parcel is
  *     still at origin, and that country's system "starts" clearance on the
- *     paperwork — so `CC_IM_START` can precede `CC_EX_START` by hours. A
- *     parcel cannot clear import before export, so an import-customs event
- *     older than the newest export-customs event is dropped before the
- *     anchor and floor logic see it (see [deriveStatus]).
+ *     paperwork — so `CC_IM_START` can precede `CC_EX_START` by hours, and
+ *     for those hours the trace holds an import event and no export event
+ *     at all. `CC_IM_START` is therefore [Confidence.ADVISORY]: it only says
+ *     the paperwork was filed. Real arrival is `CC_HO_IN_SUCCESS` /
+ *     `CC_IM_SUCCESS`. Any other import event older than the newest
+ *     export-customs event is also dropped before the anchor and floor
+ *     logic see it (see [deriveStatus]).
  *
  * Where the TOP reference distinguishes states this enum doesn't (LAST_MILE vs
  * OUT_FOR_DELIVERY, DUTIES_DUE vs IMPORT_CUSTOMS, RETURNED vs EXCEPTION) we
@@ -114,7 +117,10 @@ object StatusMapper {
         if (isDeliveredApiStatus(apiStatus)) return PackageStatus.DELIVERED
 
         // ── Drop import-customs pre-declarations ──────────────────────────
-        // A parcel cannot clear import before it clears export, so a
+        // `CC_IM_START`, the usual pre-declaration, is already ADVISORY and
+        // never reaches this point. This is the backstop for any other import
+        // event filed early: a parcel cannot clear import before it clears
+        // export, so a
         // CUSTOMS_IMPORT entry older than the newest CUSTOMS_EXPORT one is the
         // destination country processing paperwork, not the parcel arriving.
         // This has to happen before both the anchor and the floor look at the
@@ -386,7 +392,14 @@ object StatusMapper {
     private val ADVISORY_CODES = setOf(
         // Destination carrier told a parcel is coming, while the parcel is
         // typically still sitting at origin.
-        "LAST_MILE_ASN_NOTIFY"
+        "LAST_MILE_ASN_NOTIFY",
+        // "Import clearance started" is the destination country starting on
+        // pre-filed paperwork, often hours before export clearance even
+        // begins (seen on RS1337664736Y and RS1352838076Y). Before the first
+        // export event exists nothing can tell it apart from real arrival,
+        // so it must not move status. Arrival is CC_HO_IN_SUCCESS /
+        // CC_IM_SUCCESS.
+        "CC_IM_START"
     )
 
     private val FAILURE_SUFFIXES = listOf(
